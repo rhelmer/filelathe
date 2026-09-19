@@ -22,7 +22,7 @@ for (const name of entries) {
     target: "node20",
     format: "esm",
     logLevel: "info",
-    packages: "bundle",
+    packages: "external",
   });
 }
 
