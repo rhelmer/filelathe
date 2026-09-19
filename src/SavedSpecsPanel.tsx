@@ -72,19 +72,21 @@ export function SavedSpecsPanel({
         downloadContribJson(record);
         toast({
           title: "Download ready — then paste on GitHub",
-          description: `Clipboard blocked. Opened ${result.filename} as a download; copy its contents into the GitHub editor.`,
+          description: `Clipboard blocked. Opened ${result.filename} as a download; copy its contents into the GitHub editor. Opening GitHub in a moment…`,
           variant: "warning",
-          durationMs: 14_000,
+          durationMs: 16_000,
         });
       } else {
         toast({
           title: "Mini-app copied to clipboard",
           description:
-            "In the GitHub tab: click the editor, paste (⌘V / Ctrl+V), commit on a new branch, then open a pull request.",
+            "Opening GitHub in a moment. Click the editor, paste (⌘V / Ctrl+V), commit on a new branch, then open a pull request.",
           variant: "success",
-          durationMs: 14_000,
+          durationMs: 16_000,
         });
       }
+      // Let the toast paint and be read before the new tab steals focus.
+      await new Promise((r) => window.setTimeout(r, 2200));
       window.open(result.url, "_blank", "noopener,noreferrer");
     } catch (error) {
       toast({
