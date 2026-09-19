@@ -177,6 +177,21 @@ export async function listSandboxViewers(): Promise<SandboxRecord[]> {
   }
 }
 
+export async function deleteSandboxRecord(key: string): Promise<void> {
+  const db = await openDb();
+  try {
+    const tx = db.transaction(STORE, "readwrite");
+    tx.objectStore(STORE).delete(key);
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () =>
+        reject(tx.error ?? new Error("IndexedDB delete failed"));
+    });
+  } finally {
+    db.close();
+  }
+}
+
 export async function clearSandboxViewers(): Promise<void> {
   const db = await openDb();
   try {

@@ -15,11 +15,11 @@ import { buildInventPrompt } from "./invent-prompt";
 import { isProbablyUrl } from "./resource-utils";
 import { registry } from "./registry";
 import {
-  clearSandboxViewers,
   lookupSandboxViewer,
   saveSandboxViewer,
 } from "./sandbox-store";
 import { matchPlayers, plannedPlayer } from "./players";
+import { SavedSpecsPanel } from "./SavedSpecsPanel";
 import { useToast, ToastProvider } from "./toast";
 import { FilelatheLogo } from "./FilelatheLogo";
 import { WindowChrome, type WindowGeometry } from "./WindowChrome";
@@ -100,6 +100,7 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [urlDraft, setUrlDraft] = useState("");
+  const [specsRefresh, setSpecsRefresh] = useState(0);
 
   function toastApiFailure(error: unknown) {
     const msg = toastMessageForApiError(error);
@@ -315,7 +316,7 @@ export function App() {
       );
       // Never reuse an invented Spec for formats that need a real emulator.
       if (!planned) {
-        setStatus("Checking saved invented Specs…");
+        setStatus("Checking saved mini-apps…");
         const cached = await lookupSandboxViewer(file);
         if (cached && cached.inventedBy === "haiku") {
           toCompose = {
@@ -325,7 +326,7 @@ export function App() {
             inventPrompt:
               cached.prompt || file.inventPrompt || buildInventPrompt(file),
           };
-          setStatus(`Using saved Spec (${cached.scope}) — composing…`);
+          setStatus(`Using saved mini-app (${cached.scope}) — composing…`);
         } else {
           setStatus(`Detected ${labelForKind(file.kind)} — routing…`);
         }
@@ -348,7 +349,11 @@ export function App() {
     if (!data.finalSpec) throw new Error("Compose returned no spec.");
     for (const warning of data.warnings ?? []) {
       toast({
-        title: "Haiku unavailable",
+        title: warning.toLowerCase().includes("haiku")
+          ? "Haiku unavailable"
+          : warning.toLowerCase().includes("jev")
+            ? "Jev unavailable"
+            : "Using fallback",
         description: warning,
         variant: "warning",
         durationMs: 8000,
@@ -373,6 +378,7 @@ export function App() {
       }).catch((error) => {
         console.warn("[sandbox-store] save failed:", error);
       });
+      setSpecsRefresh((n) => n + 1);
     }
 
     setWindows((items) => {
@@ -483,7 +489,7 @@ export function App() {
           </div>
           <p className="max-w-2xl text-muted-foreground">
             Drop files or paste URLs. Known types get dedicated tools; unknowns
-            get an Anthropic Haiku–invented json-render Spec using the catalog.
+            get a Haiku-invented mini-app for that format.
           </p>
         </header>
 
@@ -508,14 +514,14 @@ export function App() {
               <InventingAnimation
                 label={
                   status.toLowerCase().includes("invent")
-                    ? "Haiku is inventing a Spec…"
+                    ? "Haiku is inventing a mini-app…"
                     : "Composing UI…"
                 }
               />
             </div>
           ) : (
             <p className="mt-2 text-sm text-muted-foreground">
-              media · docs · data · anything else (invent Spec) · https://…
+              media · docs · data · anything else (invent mini-app) · https://…
             </p>
           )}
           <label className="mt-4 inline-flex cursor-pointer rounded-full bg-primary px-5 py-2 text-sm text-primary-foreground">
@@ -556,25 +562,7 @@ export function App() {
         </div>
 
         <p className="text-sm text-muted-foreground">{status}</p>
-        <p className="text-xs text-muted-foreground">
-          Sandbox viewers are saved in this browser (IndexedDB) and reused for
-          the same content or file extension.{" "}
-          <button
-            type="button"
-            className="underline"
-            onClick={() => {
-              void clearSandboxViewers()
-                .then(() => setStatus("Cleared saved invented Specs."))
-                .catch((error) =>
-                  setStatus(
-                    error instanceof Error ? error.message : String(error),
-                  ),
-                );
-            }}
-          >
-            Clear saved Specs
-          </button>
-        </p>
+        <SavedSpecsPanel refreshToken={specsRefresh} />
         {windows.length === 0 ? (
           <p className="py-16 text-center text-sm text-muted-foreground">
             Windows float over the page once you drop a file or URL. Drag the

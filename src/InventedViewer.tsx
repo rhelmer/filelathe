@@ -101,17 +101,17 @@ export function InventedViewer({
       if (data.prompt) setPrompt(data.prompt);
       setNote(
         data.source === "haiku"
-          ? "Haiku invented a json-render Spec from the catalog."
+          ? "Haiku invented this mini-app from the catalog."
           : data.reason
-            ? `Fallback Spec (${data.reason}).`
-            : "Fallback Spec (Haiku unavailable or invalid output).",
+            ? `Fallback mini-app (${data.reason}).`
+            : "Fallback mini-app (Haiku unavailable or invalid output).",
       );
       if (data.modelUnavailable) {
         toast({
           title: "Haiku unavailable",
           description:
             data.reason ??
-            "Showing a fallback Spec — check ANTHROPIC_API_KEY.",
+            "Showing a fallback mini-app — check ANTHROPIC_API_KEY.",
           variant: "warning",
           durationMs: 8000,
         });
@@ -149,7 +149,7 @@ export function InventedViewer({
             disabled={busy || !prompt.trim()}
             onClick={() => void regenerate()}
           >
-            {busy ? "Inventing…" : "Regenerate Spec"}
+            {busy ? "Inventing…" : "Regenerate mini-app"}
           </button>
         </div>
         {promptOpen ? (
@@ -177,12 +177,12 @@ export function InventedViewer({
           </div>
         ) : (
           <p className="text-xs text-muted-foreground">
-            {registry ? "Invalid invented Spec." : "Loading renderer…"}
+            {registry ? "Invalid mini-app JSON." : "Loading renderer…"}
           </p>
         )}
         {busy ? (
           <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-background/70 backdrop-blur-[2px]">
-            <InventingAnimation label="Haiku is inventing a Spec…" />
+            <InventingAnimation label="Haiku is inventing a mini-app…" />
           </div>
         ) : null}
       </div>

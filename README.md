@@ -140,6 +140,8 @@ Only Specs with `inventedBy: "haiku"` are reused from cache (not fallbacks). Pla
 | `src/sandbox-store.ts` | IndexedDB Spec cache |
 | `src/module-store.ts` | Session tracker bytes |
 | `src/toast.tsx` | Error / rate-limit / model-unavailable toasts |
+| `src/SavedSpecsPanel.tsx` | List local Haiku Specs; download or propose PR |
+| `contrib/invented/` | Target path for community Spec contributions |
 
 ## Scripts
 

@@ -16,6 +16,8 @@ import { buildInventPrompt } from "./invent-prompt";
 import { inventViewerSpec } from "./invent-viewer";
 import type { PlayerEntry } from "./players";
 import { routeUnknownFile } from "./route-unknown";
+import { buildFallbackComposeSpec } from "./compose-fallback";
+import { isModelUnavailableError } from "./server/model-errors";
 
 const catalog = appCatalog as unknown as Experimental_CompositionCatalog;
 
@@ -38,17 +40,17 @@ function noteForSource(
   reason?: string | null,
 ): string {
   if (source === "haiku") {
-    return "Haiku invented a json-render Spec from the catalog.";
+    return "Haiku invented this mini-app from the catalog.";
   }
   if (source === "cache") {
-    return "Spec restored from browser storage.";
+    return "Mini-app restored from browser storage.";
   }
   if (source === "fallback") {
     return reason
-      ? `Fallback Spec (${reason}).`
-      : "Fallback Spec (Haiku unavailable or invalid output).";
+      ? `Fallback mini-app (${reason}).`
+      : "Fallback mini-app (Haiku unavailable or invalid output).";
   }
-  return "Preparing invented Spec…";
+  return "Preparing mini-app…";
 }
 
 /** Wrap an invented Spec in InventedViewer (prompt editor + nested Renderer). */
@@ -189,7 +191,7 @@ export async function composeForFile(
     if (invented.modelUnavailable) {
       warnings.push(
         invented.reason ??
-          "Haiku is unavailable — showing a fallback Spec instead.",
+          "Haiku is unavailable — showing a fallback mini-app instead.",
       );
     }
 
@@ -230,46 +232,83 @@ export async function composeForFile(
     };
   }
 
-  const evaluate = createEvaluator();
-  const events: Experimental_CompositionEvent[] = [];
-  let finalSpec: Spec | null = null;
-  let stopReason: ComposeResult["stopReason"] = null;
   const prompt = promptForFile(enriched);
   const initialState = stateForFile(enriched);
+  const fallbackReason = (error: unknown) =>
+    error instanceof Error ? error.message : String(error);
 
-  for await (const event of experimental_composeSpec({
-    catalog,
-    candidates: buildFileCandidates(enriched),
-    prompt,
-    initialState,
-    evaluate,
-    maxSteps: MAX_ELEMENTS,
-    maxElements: MAX_ELEMENTS,
-    maxDepth: 4,
-    signal: options.signal ?? AbortSignal.timeout(60_000),
-    context: {
-      platform: `User dropped a ${enriched.kind} file named ${JSON.stringify(enriched.filename)}. Build a ${labelForKind(enriched.kind)} UI using only the offered candidates. The OS-style window chrome already shows the file title and name — do not repeat them.`,
-    },
-    instructions: {
-      root: "Prefer Card as a border-only shell (no title/description). Use Stack only if several content sections are needed.",
-      next: `Always include the primary ${enriched.kind} content candidate. Keep the tree minimal: primary content only (+ optional note/save). Never add Heading or filename labels.`,
-      parent:
-        "Put the primary content inside the card or stack. Keep actions near related fields.",
-    },
-  })) {
-    events.push(event);
-    if (event.spec) finalSpec = event.spec;
-    if (event.type === "complete") stopReason = event.stopReason;
+  try {
+    const evaluate = createEvaluator();
+    const events: Experimental_CompositionEvent[] = [];
+    let finalSpec: Spec | null = null;
+    let stopReason: ComposeResult["stopReason"] = null;
+
+    for await (const event of experimental_composeSpec({
+      catalog,
+      candidates: buildFileCandidates(enriched),
+      prompt,
+      initialState,
+      evaluate,
+      maxSteps: MAX_ELEMENTS,
+      maxElements: MAX_ELEMENTS,
+      maxDepth: 4,
+      signal: options.signal ?? AbortSignal.timeout(60_000),
+      context: {
+        platform: `User dropped a ${enriched.kind} file named ${JSON.stringify(enriched.filename)}. Build a ${labelForKind(enriched.kind)} UI using only the offered candidates. The OS-style window chrome already shows the file title and name — do not repeat them.`,
+      },
+      instructions: {
+        root: "Prefer Card as a border-only shell (no title/description). Use Stack only if several content sections are needed.",
+        next: `Always include the primary ${enriched.kind} content candidate. Keep the tree minimal: primary content only (+ optional note/save). Never add Heading or filename labels.`,
+        parent:
+          "Put the primary content inside the card or stack. Keep actions near related fields.",
+      },
+    })) {
+      events.push(event);
+      if (event.spec) finalSpec = event.spec;
+      if (event.type === "complete") stopReason = event.stopReason;
+    }
+
+    if (!finalSpec) {
+      const reason = "Jev compose returned no Spec";
+      console.warn(`[compose] ${reason} — using hardcoded fallback.`);
+      return {
+        events,
+        finalSpec: buildFallbackComposeSpec(enriched, reason),
+        stopReason: "unavailable",
+        prompt,
+        kind: enriched.kind,
+        file: enriched,
+        warnings: [`Jev compose failed — ${reason}. Using built-in layout.`],
+      };
+    }
+
+    return {
+      events,
+      finalSpec,
+      stopReason,
+      prompt,
+      kind: enriched.kind,
+      file: enriched,
+    };
+  } catch (error) {
+    const reason = fallbackReason(error);
+    console.warn(
+      `[compose] Jev failed (${isModelUnavailableError(error) ? "unavailable" : "error"}): ${reason} — hardcoded fallback.`,
+    );
+    return {
+      events: [],
+      finalSpec: buildFallbackComposeSpec(enriched, reason),
+      stopReason: "unavailable",
+      prompt,
+      kind: enriched.kind,
+      file: enriched,
+      warnings: [
+        isModelUnavailableError(error)
+          ? `Jev unavailable — using built-in ${enriched.kind} layout.`
+          : `Jev compose failed — using built-in ${enriched.kind} layout. (${reason})`,
+      ],
+    };
   }
-
-  return {
-    events,
-    finalSpec,
-    stopReason,
-    prompt,
-    kind: enriched.kind,
-    file: enriched,
-  };
 }
 
 /** @deprecated Prefer composeForFile for the drop-first app. */

@@ -349,12 +349,12 @@ export function stateForFile(file: LoadedFile) {
     base.file.inventPrompt = file.inventPrompt ?? "";
     base.file.inventNote =
       file.inventSource === "haiku"
-        ? "Haiku invented a json-render Spec from the catalog."
+        ? "Haiku invented this mini-app from the catalog."
         : file.inventSource === "cache"
-          ? "Spec restored from browser storage."
+          ? "Mini-app restored from browser storage."
           : file.inventSource === "fallback"
-            ? "Fallback Spec (Haiku unavailable or invalid output)."
-            : "Preparing invented Spec…";
+            ? "Fallback mini-app (Haiku unavailable or invalid output)."
+            : "Preparing mini-app…";
   }
   if (file.kind === "json") {
     const data: Record<string, unknown> = {};
