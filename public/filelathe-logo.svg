@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" role="img" aria-labelledby="filelathe-logo-title">
+  <title id="filelathe-logo-title">Filelathe</title>
+  <path
+    d="M18 8h18l12 12v32a4 4 0 0 1-4 4H18a4 4 0 0 1-4-4V12a4 4 0 0 1 4-4Z"
+    fill="#2a6b5a"
+    fill-opacity="0.14"
+    stroke="#2a6b5a"
+    stroke-width="2.5"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M36 8v10a2 2 0 0 0 2 2h10"
+    stroke="#2a6b5a"
+    stroke-width="2.5"
+    stroke-linejoin="round"
+    fill="none"
+  />
+  <circle cx="14" cy="36" r="5.5" stroke="#2a6b5a" stroke-width="2.5" fill="none" />
+  <circle cx="14" cy="36" r="2" fill="#2a6b5a" />
+  <path d="M19.5 36H46" stroke="#2a6b5a" stroke-width="2.5" stroke-linecap="round" />
+  <path d="M46 36h6l3-3.5V39.5L52 36Z" fill="#2a6b5a" />
+  <path
+    d="M24 28h16M24 44h12"
+    stroke="#2a6b5a"
+    stroke-width="2"
+    stroke-linecap="round"
+    opacity="0.45"
+  />
+</svg>

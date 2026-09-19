@@ -1,0 +1,86 @@
+import type { ApiErrorBody, ApiErrorCode } from "../api-error";
+import { isModelUnavailableError } from "./model-errors";
+import {
+  clientKeyFromHeaders,
+  enforceRateLimit,
+  type RateLimitBucket,
+} from "./rate-limit";
+
+export function jsonResponse(
+  body: unknown,
+  init: {
+    status?: number;
+    headers?: Record<string, string>;
+  } = {},
+): Response {
+  return new Response(JSON.stringify(body), {
+    status: init.status ?? 200,
+    headers: {
+      "Content-Type": "application/json",
+      ...init.headers,
+    },
+  });
+}
+
+export function errorResponse(
+  status: number,
+  error: string,
+  options: {
+    code?: ApiErrorCode;
+    retryAfter?: number;
+    model?: "jev" | "haiku";
+  } = {},
+): Response {
+  const body: ApiErrorBody = {
+    error,
+    code: options.code,
+    retryAfter: options.retryAfter,
+    model: options.model,
+  };
+  const headers: Record<string, string> = {};
+  if (typeof options.retryAfter === "number") {
+    headers["Retry-After"] = String(options.retryAfter);
+  }
+  return jsonResponse(body, { status, headers });
+}
+
+export async function withRateLimit(
+  request: Request,
+  bucket: RateLimitBucket,
+  handler: () => Promise<Response>,
+): Promise<Response> {
+  const clientKey = clientKeyFromHeaders(request.headers);
+  const limit = await enforceRateLimit(bucket, clientKey);
+  if (limit.pending) {
+    // Best-effort: fire-and-forget when waitUntil is unavailable (local Node).
+    void limit.pending.catch(() => undefined);
+  }
+  if (!limit.allowed) {
+    return errorResponse(limit.status, limit.error, {
+      code: limit.code,
+      retryAfter: limit.retryAfter,
+    });
+  }
+  return handler();
+}
+
+export function catchApiError(error: unknown): Response {
+  if (isModelUnavailableError(error)) {
+    return errorResponse(503, error.message, {
+      code: "model_unavailable",
+      model: error.model,
+    });
+  }
+  console.error(error);
+  return errorResponse(
+    500,
+    error instanceof Error ? error.message : String(error),
+    { code: "internal" },
+  );
+}
+
+export async function readJsonBody<T>(request: Request): Promise<T> {
+  const text = await request.text();
+  if (!text) return {} as T;
+  return JSON.parse(text) as T;
+}

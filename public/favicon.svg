@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <!-- Simplified mark for small sizes: file + chuck + cut -->
+  <path
+    d="M8 4h9l7 7v15a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"
+    fill="#2a6b5a"
+  />
+  <path
+    d="M17 4v6a1 1 0 0 0 1 1h6"
+    stroke="#e8f5f0"
+    stroke-width="1.75"
+    stroke-linejoin="round"
+  />
+  <circle cx="7" cy="18" r="3.25" fill="#e8f5f0" />
+  <circle cx="7" cy="18" r="1.25" fill="#2a6b5a" />
+  <path
+    d="M10 18h14"
+    stroke="#e8f5f0"
+    stroke-width="2"
+    stroke-linecap="round"
+  />
+  <path d="M24 18h3.5L29 15.5V20.5L27.5 18Z" fill="#e8f5f0" />
+</svg>
