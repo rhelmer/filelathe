@@ -37,10 +37,14 @@ const memoryKv = createMemoryKv();
 const upstashLimiters = new Map<RateLimitBucket, Ratelimit>();
 
 function hasUpstash(): boolean {
-  return Boolean(
-    process.env.UPSTASH_REDIS_REST_URL?.trim() &&
-      process.env.UPSTASH_REDIS_REST_TOKEN?.trim(),
-  );
+  // Match @upstash/redis Redis.fromEnv(): UPSTASH_* or Vercel KV_* aliases.
+  const url =
+    process.env.UPSTASH_REDIS_REST_URL?.trim() ||
+    process.env.KV_REST_API_URL?.trim();
+  const token =
+    process.env.UPSTASH_REDIS_REST_TOKEN?.trim() ||
+    process.env.KV_REST_API_TOKEN?.trim();
+  return Boolean(url && token);
 }
 
 function upstashLimiter(bucket: RateLimitBucket): Ratelimit {

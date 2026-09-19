@@ -269,9 +269,9 @@ var RATE_LIMITS = {
 var memoryKv = createMemoryKv();
 var upstashLimiters = /* @__PURE__ */ new Map();
 function hasUpstash() {
-  return Boolean(
-    process.env.UPSTASH_REDIS_REST_URL?.trim() && process.env.UPSTASH_REDIS_REST_TOKEN?.trim()
-  );
+  const url = process.env.UPSTASH_REDIS_REST_URL?.trim() || process.env.KV_REST_API_URL?.trim();
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN?.trim() || process.env.KV_REST_API_TOKEN?.trim();
+  return Boolean(url && token);
 }
 function upstashLimiter(bucket) {
   const existing = upstashLimiters.get(bucket);
