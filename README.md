@@ -128,8 +128,8 @@ Only Specs with `inventedBy: "haiku"` are reused from cache (not fallbacks). Pla
 | --- | --- |
 | `src/App.tsx` | Drop/URL UI, windows, IndexedDB cache lookup/save |
 | `src/dev-server.ts` | Local Vite + same API handlers as Vercel |
-| `src/api-entries/` | Thin Vercel route entries (bundled → `api/*.js` on build) |
-| `api/*.js` | Generated serverless bundles (not committed) |
+| `src/api-entries/` | Thin Vercel route entries (source for esbuild) |
+| `api/*.js` | Bundled serverless routes (committed — Vercel discovers them before build) |
 | `src/server/` | Shared handlers, Upstash/memory rate limits |
 | `src/files.ts` | Kind detection, samples, hex preview |
 | `src/players.ts` | Host player / emulator registry (available vs planned) |
