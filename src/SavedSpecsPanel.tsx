@@ -68,24 +68,24 @@ export function SavedSpecsPanel({
     setBusyKey(record.key);
     try {
       const result = await proposeSpecOnGithub(record);
-      window.open(result.url, "_blank", "noopener,noreferrer");
-      if (result.mode === "prefilled") {
+      if (!result.copied) {
+        downloadContribJson(record);
         toast({
-          title: "Opened GitHub",
-          description:
-            "Review the mini-app JSON, commit on a branch, then open a pull request (GitHub will fork if needed).",
-          variant: "success",
-          durationMs: 9000,
+          title: "Download ready — then paste on GitHub",
+          description: `Clipboard blocked. Opened ${result.filename} as a download; copy its contents into the GitHub editor.`,
+          variant: "warning",
+          durationMs: 14_000,
         });
       } else {
         toast({
-          title: "Mini-app copied — paste on GitHub",
+          title: "Mini-app copied to clipboard",
           description:
-            "The JSON was too large for a prefilled URL. Paste into the editor, commit, then open a PR.",
-          variant: "warning",
-          durationMs: 12_000,
+            "In the GitHub tab: click the editor, paste (⌘V / Ctrl+V), commit on a new branch, then open a pull request.",
+          variant: "success",
+          durationMs: 14_000,
         });
       }
+      window.open(result.url, "_blank", "noopener,noreferrer");
     } catch (error) {
       toast({
         title: "Could not open GitHub",
@@ -160,8 +160,9 @@ export function SavedSpecsPanel({
               {CONTRIB_REPO}
             </a>{" "}
             — GitHub opens a new file under{" "}
-            <code className="text-[11px]">contrib/invented/</code> and can fork
-            + PR for you. (Under the hood each mini-app is a json-render Spec.)
+            <code className="text-[11px]">contrib/invented/</code>. Contents are
+            copied to your clipboard first — paste into the editor, then commit
+            / PR (GitHub will fork if needed).
           </p>
 
           {records.length === 0 ? (

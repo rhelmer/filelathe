@@ -1,6 +1,10 @@
 /**
  * Helpers to package a local Haiku Spec and open GitHub's "new file" flow
  * (fork + PR when the user lacks write access).
+ *
+ * GitHub's create-file UI no longer reliably accepts a `value=` query param
+ * (and Specs often exceed URL length). We always copy JSON to the clipboard
+ * and open an editor with the filename prefilled — user pastes once.
  */
 
 import type { SandboxRecord } from "./sandbox-store";
@@ -8,9 +12,6 @@ import type { SandboxRecord } from "./sandbox-store";
 export const CONTRIB_REPO = "rhelmer/filelathe";
 export const CONTRIB_BRANCH = "main";
 export const CONTRIB_DIR = "contrib/invented";
-
-/** Soft browser URL length budget for pre-filled GitHub new-file links. */
-const MAX_GITHUB_URL_CHARS = 7000;
 
 export type ContribPayload = {
   version: 1;
@@ -52,28 +53,30 @@ export function contribJson(record: SandboxRecord): string {
   return `${JSON.stringify(buildContribPayload(record), null, 2)}\n`;
 }
 
+/** Open GitHub "Create new file" under contrib/invented/ with name filled in. */
 export function githubNewFileUrl(options: {
   filename: string;
-  value?: string;
   message?: string;
   description?: string;
 }): string {
-  const path = `${CONTRIB_DIR}/${options.filename}`;
   const params = new URLSearchParams();
-  params.set("filename", path);
-  if (options.value != null) params.set("value", options.value);
+  // Basename only — directory is in the path (more reliable than path-in-filename).
+  params.set("filename", options.filename);
   if (options.message) params.set("message", options.message);
   if (options.description) params.set("description", options.description);
-  return `https://github.com/${CONTRIB_REPO}/new/${CONTRIB_BRANCH}?${params.toString()}`;
+  return `https://github.com/${CONTRIB_REPO}/new/${CONTRIB_BRANCH}/${CONTRIB_DIR}?${params.toString()}`;
 }
 
-export type ProposeResult =
-  | { mode: "prefilled"; url: string }
-  | { mode: "clipboard"; url: string };
+export type ProposeResult = {
+  url: string;
+  filename: string;
+  /** True when clipboard.writeText succeeded. */
+  copied: boolean;
+};
 
 /**
- * Prefer a one-click prefilled GitHub editor. If the Spec is too large for the
- * URL, copy JSON to the clipboard and open an empty editor at the right path.
+ * Copy mini-app JSON to the clipboard, then open GitHub's new-file page.
+ * User pastes into the editor, commits on a branch, and opens a PR.
  */
 export async function proposeSpecOnGithub(
   record: SandboxRecord,
@@ -91,24 +94,20 @@ export async function proposeSpecOnGithub(
     "Please review the mini-app Spec before merging.",
   ].join("\n");
 
-  const prefilled = githubNewFileUrl({
-    filename,
-    value: body,
-    message,
-    description,
-  });
-
-  if (prefilled.length <= MAX_GITHUB_URL_CHARS) {
-    return { mode: "prefilled", url: prefilled };
+  let copied = false;
+  try {
+    await navigator.clipboard.writeText(body);
+    copied = true;
+  } catch {
+    // Permissions / insecure context — caller should fall back to download.
+    copied = false;
   }
 
-  await navigator.clipboard.writeText(body);
-  const empty = githubNewFileUrl({
+  return {
+    url: githubNewFileUrl({ filename, message, description }),
     filename,
-    message,
-    description,
-  });
-  return { mode: "clipboard", url: empty };
+    copied,
+  };
 }
 
 export function downloadContribJson(record: SandboxRecord): void {
