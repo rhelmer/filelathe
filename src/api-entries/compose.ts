@@ -1,4 +1,4 @@
-import { handleCompose } from "../src/server/handlers";
+import { handleCompose } from "../server/handlers";
 
 export const maxDuration = 300;
 

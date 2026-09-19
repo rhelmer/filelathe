@@ -8,7 +8,7 @@ export type ApiErrorCode =
   | "internal";
 
 export type ApiErrorBody = {
-  error: string;
+  error?: string;
   code?: ApiErrorCode;
   retryAfter?: number;
   model?: "jev" | "haiku";
@@ -43,11 +43,22 @@ export async function readApiError(
 ): Promise<ApiRequestError> {
   const retryHeader = response.headers.get("Retry-After");
   const retryFromHeader = retryHeader ? Number(retryHeader) : NaN;
-  let body: ApiErrorBody = { error: response.statusText || "Request failed" };
+  const contentType = response.headers.get("content-type") ?? "";
+  let body: ApiErrorBody = {};
+  let rawSnippet = "";
+
   try {
-    body = (await response.json()) as ApiErrorBody;
+    const text = await response.text();
+    rawSnippet = text.slice(0, 160).replace(/\s+/g, " ").trim();
+    if (text) {
+      try {
+        body = JSON.parse(text) as ApiErrorBody;
+      } catch {
+        // non-JSON (often an HTML error / SPA shell)
+      }
+    }
   } catch {
-    // keep statusText
+    // ignore
   }
 
   const code: ApiErrorCode =
@@ -67,7 +78,18 @@ export async function readApiError(
         ? retryFromHeader
         : null;
 
-  return new ApiRequestError(body.error || response.statusText, {
+  const statusLabel = response.statusText?.trim() || `HTTP ${response.status}`;
+  let message =
+    body.error?.trim() ||
+    (rawSnippet && !contentType.includes("application/json")
+      ? `${statusLabel} (${contentType || "unknown type"}): ${rawSnippet}`
+      : statusLabel);
+
+  if (!message || message === String(response.status)) {
+    message = `HTTP ${response.status}${contentType ? ` · ${contentType}` : ""}`;
+  }
+
+  return new ApiRequestError(message, {
     status: response.status,
     code,
     retryAfter,
@@ -110,7 +132,7 @@ export function toastMessageForApiError(error: unknown): {
       };
     }
     return {
-      title: "Request failed",
+      title: `Request failed (${error.status})`,
       description: error.message,
       variant: "error",
     };

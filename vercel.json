@@ -5,13 +5,13 @@
   "outputDirectory": "dist",
   "installCommand": "pnpm install",
   "functions": {
-    "api/compose.ts": {
+    "api/compose.js": {
       "maxDuration": 300
     },
-    "api/invent-viewer.ts": {
+    "api/invent-viewer.js": {
       "maxDuration": 300
     },
-    "api/fetch-resource.ts": {
+    "api/fetch-resource.js": {
       "maxDuration": 60
     }
   },

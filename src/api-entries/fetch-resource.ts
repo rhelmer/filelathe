@@ -1,4 +1,4 @@
-import { handleFetchResource } from "../src/server/handlers";
+import { handleFetchResource } from "../server/handlers";
 
 export const maxDuration = 60;
 

@@ -1,4 +1,4 @@
-import { handleInventViewer } from "../src/server/handlers";
+import { handleInventViewer } from "../server/handlers";
 
 export const maxDuration = 300;
 

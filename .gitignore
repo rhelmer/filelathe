@@ -2,8 +2,11 @@
 .last-spec-*.json
 node_modules
 dist
+api
 .env
 .env.*
 !.env.example
 *.log
 .DS_Store
+.vercel
+.env*
