@@ -14,6 +14,7 @@
     "file-smoke": "tsx --env-file=.env src/file-smoke.ts",
     "invent-smoke": "tsx src/invent-smoke.ts",
     "check-types": "tsc --noEmit",
+    "verify": "pnpm check-types && pnpm invent-smoke && pnpm build",
     "demo:capture": "node scripts/social-media/capture-filelathe-demo.mjs"
   },
   "dependencies": {
