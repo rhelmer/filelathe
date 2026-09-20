@@ -29,15 +29,25 @@ export function buildFileCandidates(file: LoadedFile): Candidate[] {
     });
   }
 
+  const fillWindow =
+    file.kind === "webpage" ||
+    file.kind === "image" ||
+    file.kind === "video" ||
+    file.kind === "pdf" ||
+    file.kind === "tracker" ||
+    file.kind === "csv";
+
   add(
     "card",
-    "Card: bordered container for the file content only (no title — the window chrome already shows name/type).",
+    fillWindow
+      ? "Card: full-width border-only shell so the primary viewer fills the floating window (no title — chrome already shows name/type)."
+      : "Card: bordered container for the file content only (no title — the window chrome already shows name/type).",
     "Card",
     {
       title: null,
       description: null,
-      maxWidth: "md",
-      centered: true,
+      maxWidth: fillWindow ? "full" : "md",
+      centered: fillWindow ? null : true,
     },
     "layout:card",
     undefined,

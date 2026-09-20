@@ -12,7 +12,10 @@ function cardWith(
   child: Spec["elements"][string],
   state: Spec["state"],
   extras?: Spec["elements"],
+  layout: { maxWidth?: "sm" | "md" | "lg" | "full"; centered?: boolean | null } = {},
 ): Spec {
+  const maxWidth = layout.maxWidth ?? "md";
+  const centered = layout.centered === undefined ? true : layout.centered;
   return {
     root: "card",
     state,
@@ -22,8 +25,8 @@ function cardWith(
         props: {
           title: null,
           description: null,
-          maxWidth: "md",
-          centered: true,
+          maxWidth,
+          centered,
         },
         children: extras ? [childId, ...Object.keys(extras)] : [childId],
       },
@@ -116,6 +119,7 @@ export function buildFallbackComposeSpec(
         },
         state,
         { note: alertNote("note", note) },
+        { maxWidth: "full", centered: null },
       );
 
     case "tracker":
@@ -180,6 +184,8 @@ export function buildFallbackComposeSpec(
         },
         state,
         { note: alertNote("note", note) },
+        // Fill the floating window — md/centered leaves a tiny preview on tall Shorts frames
+        { maxWidth: "full", centered: null },
       );
 
     case "text":

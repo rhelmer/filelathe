@@ -18,6 +18,13 @@ import {
   lookupSandboxViewer,
   saveSandboxViewer,
 } from "./sandbox-store";
+import {
+  buildSessionSnapshot,
+  loadSession,
+  reviveWindow,
+  saveSession,
+} from "./session-store";
+import { getModule } from "./module-store";
 import { matchPlayers, plannedPlayer } from "./players";
 import { SavedSpecsPanel } from "./SavedSpecsPanel";
 import { useToast, ToastProvider } from "./toast";
@@ -102,6 +109,11 @@ export function App() {
   const [dragOver, setDragOver] = useState(false);
   const [urlDraft, setUrlDraft] = useState("");
   const [specsRefresh, setSpecsRefresh] = useState(0);
+  const [sessionReady, setSessionReady] = useState(false);
+  const activeIdRef = useRef(activeId);
+  activeIdRef.current = activeId;
+  const zTopRef = useRef(zTop);
+  zTopRef.current = zTop;
 
   function toastApiFailure(error: unknown) {
     const msg = toastMessageForApiError(error);
@@ -112,6 +124,83 @@ export function App() {
       durationMs: msg.variant === "error" ? 10_000 : 7000,
     });
   }
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const snap = await loadSession();
+        if (cancelled) return;
+        if (snap?.windows.length) {
+          const revived = snap.windows.map(reviveWindow);
+          setWindows(revived);
+          setActiveId(
+            snap.activeId && revived.some((w) => w.id === snap.activeId)
+              ? snap.activeId
+              : (revived.at(-1)?.id ?? null),
+          );
+          setZTop(Math.max(snap.zTop, ...revived.map((w) => w.z), 10));
+          setStatus(
+            `Restored ${revived.length} window${revived.length === 1 ? "" : "s"} from this browser.`,
+          );
+        }
+      } catch (error) {
+        console.warn("[session] restore failed:", error);
+      } finally {
+        if (!cancelled) setSessionReady(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!sessionReady) return;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const snapshot = await buildSessionSnapshot({
+            windows: windowsRef.current,
+            activeId: activeIdRef.current,
+            zTop: zTopRef.current,
+            getModuleBytes: getModule,
+          });
+          if (!cancelled) await saveSession(snapshot);
+        } catch (error) {
+          console.warn("[session] save failed:", error);
+        }
+      })();
+    }, 350);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [windows, activeId, zTop, sessionReady]);
+
+  useEffect(() => {
+    if (!sessionReady) return;
+    const flush = () => {
+      void buildSessionSnapshot({
+        windows: windowsRef.current,
+        activeId: activeIdRef.current,
+        zTop: zTopRef.current,
+        getModuleBytes: getModule,
+      })
+        .then(saveSession)
+        .catch((error) => console.warn("[session] flush failed:", error));
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [sessionReady]);
 
   useEffect(() => {
     return () => {

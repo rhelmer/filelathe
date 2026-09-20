@@ -10,6 +10,7 @@
  * Usage:
  *   pnpm demo:capture
  *   FILELATHE_URL=http://localhost:5174 pnpm demo:capture
+ *   FILELATHE_DEMO_ONLY=vertical FILELATHE_URL=http://localhost:5174 pnpm demo:capture
  *
  * MOD render needs Vite (mod-render.html). Defaults to FILELATHE_URL when local,
  * otherwise http://localhost:5174 — override with RENDER_URL.
@@ -134,8 +135,11 @@ async function uploadFile(page, filePath) {
 async function openUrl(page, url) {
   const field = page.locator('input[type="url"]').first();
   await field.waitFor({ state: "visible", timeout: 30_000 });
+  // Floating windows can cover the form on tall/portrait viewports
+  await minimizeAllWindows(page);
+  await field.click({ force: true });
   await field.fill(url);
-  await page.getByRole("button", { name: /^Open URL$/i }).click();
+  await page.getByRole("button", { name: /^Open URL$/i }).click({ force: true });
 }
 
 async function clickTrackerPlay(page) {
@@ -199,7 +203,8 @@ async function renderTrackerWav(browser) {
 /** Mux silent screen capture with tracker WAV, delayed until Play was clicked.
  *  leadTrimMs drops Playwright’s blank about:blank / pre-paint frames. */
 function muxVideoWithTracker(stagedWebm, cfg, audioDelayMs, leadTrimMs = 0) {
-  const { width, height } = cfg.viewport;
+  const out = cfg.outSize ?? cfg.viewport;
+  const { width, height } = out;
   const trimMs = Math.max(0, Math.round(leadTrimMs));
   const delay = Math.max(0, Math.round(audioDelayMs) - trimMs);
   const trimSec = (trimMs / 1000).toFixed(3);
@@ -484,7 +489,13 @@ async function minimizeWindowMatching(page, pattern) {
 }
 
 async function minimizeAllWindows(page) {
-  for (let pass = 0; pass < 8; pass++) {
+  for (let pass = 0; pass < 12; pass++) {
+    // Prefer Restore→then Minimize when a window is maximized (Expand covers the form)
+    const restore = page.getByRole("button", { name: /^Restore$/i }).first();
+    if ((await restore.count()) > 0) {
+      await restore.click({ force: true }).catch(() => undefined);
+      await page.waitForTimeout(200);
+    }
     const btn = page.getByRole("button", { name: /^Minimize$/i }).first();
     if ((await btn.count()) === 0) break;
     await btn.click({ force: true }).catch(() => undefined);
@@ -492,11 +503,12 @@ async function minimizeAllWindows(page) {
   }
 }
 
-async function runDemoScene(page, videoEpochMs) {
+async function runDemoScene(page, videoEpochMs, cfg = {}) {
   await page.goto(siteUrl + "/", { waitUntil: "domcontentloaded", timeout: 60_000 });
   await page
     .getByRole("heading", { name: /^Filelathe$/i })
     .waitFor({ state: "visible", timeout: 60_000 });
+
   // First painted frame — trim blank about:blank / pre-paint from the recording
   const leadTrimMs = Date.now() - videoEpochMs;
   await page.waitForTimeout(400);
@@ -583,16 +595,38 @@ async function recordVideos(browser) {
     },
     {
       name: "vertical",
-      viewport: { width: 1080, height: 1920 },
+      // Capture at phone-narrow CSS so touch layout + Expand fill the frame;
+      // mux upscales to 1080×1920 for YouTube Shorts.
+      viewport: { width: 720, height: 1280 },
+      outSize: { width: 1080, height: 1920 },
+      deviceScaleFactor: 2,
+      hasTouch: true,
+      isMobile: true,
+      portrait: true,
       mp4: path.join(outDir, "filelathe_demo_vertical.mp4"),
     },
   ];
 
-  for (const cfg of configs) {
+  const only = (process.env.FILELATHE_DEMO_ONLY ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const selected = only.length
+    ? configs.filter((c) => only.includes(c.name))
+    : configs;
+  if (selected.length === 0) {
+    throw new Error(
+      `FILELATHE_DEMO_ONLY=${process.env.FILELATHE_DEMO_ONLY} matched no formats`,
+    );
+  }
+
+  for (const cfg of selected) {
     console.log(`Recording ${cfg.name}…`);
     const context = await browser.newContext({
       viewport: cfg.viewport,
-      deviceScaleFactor: 1,
+      deviceScaleFactor: cfg.deviceScaleFactor ?? 1,
+      hasTouch: cfg.hasTouch ?? false,
+      isMobile: cfg.isMobile ?? false,
       recordVideo: {
         dir: tmpDir,
         size: cfg.viewport,
@@ -600,7 +634,11 @@ async function recordVideos(browser) {
     });
     const page = await context.newPage();
     const videoEpochMs = Date.now();
-    const { audioDelayMs, leadTrimMs } = await runDemoScene(page, videoEpochMs);
+    const { audioDelayMs, leadTrimMs } = await runDemoScene(
+      page,
+      videoEpochMs,
+      cfg,
+    );
     await page.close();
     await context.close();
 
@@ -633,38 +671,48 @@ async function main() {
 
   await renderTrackerWav(browser);
 
-  const stillContext = await browser.newContext({
-    viewport: { width: 1280, height: 800 },
-    deviceScaleFactor: 2,
-  });
-  const stillPage = await stillContext.newPage();
-  const stills = await captureStill(stillPage);
-  await stillContext.close();
+  const only = (process.env.FILELATHE_DEMO_ONLY ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const skipStills = only.length > 0 && !only.includes("stills");
 
-  fs.copyFileSync(stills.heroPath, path.join(outDir, "filelathe_hero.png"));
-  fs.copyFileSync(
-    stills.inventStill,
-    path.join(outDir, "filelathe_demo_still.png"),
-  );
+  if (!skipStills) {
+    const stillContext = await browser.newContext({
+      viewport: { width: 1280, height: 800 },
+      deviceScaleFactor: 2,
+    });
+    const stillPage = await stillContext.newPage();
+    const stills = await captureStill(stillPage);
+    await stillContext.close();
 
-  run("ffmpeg", [
-    "-y",
-    "-i",
-    stills.inventStill,
-    "-frames:v",
-    "1",
-    "-update",
-    "1",
-    "-vf",
-    "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=#f7f5ef",
-    "-q:v",
-    "2",
-    path.join(outDir, "filelathe_demo_thumbnail.jpg"),
-  ]);
+    fs.copyFileSync(stills.heroPath, path.join(outDir, "filelathe_hero.png"));
+    fs.copyFileSync(
+      stills.inventStill,
+      path.join(outDir, "filelathe_demo_still.png"),
+    );
 
-  const og = path.join(root, "public/og.png");
-  if (fs.existsSync(og)) {
-    fs.copyFileSync(og, path.join(outDir, "og.png"));
+    run("ffmpeg", [
+      "-y",
+      "-i",
+      stills.inventStill,
+      "-frames:v",
+      "1",
+      "-update",
+      "1",
+      "-vf",
+      "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=#f7f5ef",
+      "-q:v",
+      "2",
+      path.join(outDir, "filelathe_demo_thumbnail.jpg"),
+    ]);
+
+    const og = path.join(root, "public/og.png");
+    if (fs.existsSync(og)) {
+      fs.copyFileSync(og, path.join(outDir, "og.png"));
+    }
+  } else {
+    console.log("Skipping stills (FILELATHE_DEMO_ONLY set)");
   }
 
   await recordVideos(browser);

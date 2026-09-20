@@ -18,7 +18,10 @@ export function WebPageViewer({
   );
 
   return (
-    <div className="space-y-3" data-webpage-viewer="">
+    <div
+      className="flex min-h-0 flex-1 flex-col gap-3"
+      data-webpage-viewer=""
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex gap-1 rounded-full border bg-muted/40 p-0.5">
           <button
@@ -59,21 +62,20 @@ export function WebPageViewer({
       {tab === "preview" ? (
         <iframe
           title={label}
-          className="h-[min(480px,55vh)] w-full rounded-lg border bg-white"
+          className="min-h-[320px] w-full flex-1 rounded-lg border bg-white h-[min(78dvh,1400px)]"
           sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"
           srcDoc={previewHtml}
           referrerPolicy="no-referrer"
         />
       ) : (
-        <pre className="max-h-[min(480px,55vh)] overflow-auto rounded-lg border bg-muted/30 p-3 font-mono text-[11px] leading-snug break-all whitespace-pre-wrap">
+        <pre className="min-h-[320px] max-h-[min(78dvh,1400px)] flex-1 overflow-auto rounded-lg border bg-muted/30 p-3 font-mono text-[11px] leading-snug break-all whitespace-pre-wrap">
           {props.html || "(empty)"}
         </pre>
       )}
 
-      <p className="text-xs text-muted-foreground">
-        Snapshot with a base URL so relative images/CSS/links resolve against
-        the original site. In-preview links browse here; use Open original for
-        the live page. JS-injected assets may still be missing.
+      <p className="shrink-0 text-[11px] leading-snug text-muted-foreground">
+        Snapshot resolves relative assets against the original site. In-preview
+        links browse here; Open original for the live page.
       </p>
     </div>
   );
