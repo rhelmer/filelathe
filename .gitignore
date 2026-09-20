@@ -12,6 +12,4 @@ dist
 tmp/
 scripts/fixtures/*.mod
 public/demo/*.mod
-scripts/social-media/filelathe-launch-posts.md
-test-results/
-playwright-report/
+scripts/social-media/*.md

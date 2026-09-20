@@ -5,9 +5,16 @@
  * GitHub's create-file UI no longer reliably accepts a `value=` query param
  * (and Specs often exceed URL length). We always copy JSON to the clipboard
  * and open an editor with the filename prefilled — user pastes once.
+ *
+ * File samples / hex / inline bodies are scrubbed before copy/download so a
+ * public PR does not include the dropped file’s contents.
  */
 
 import type { SandboxRecord } from "./sandbox-store";
+import {
+  scrubPromptForContrib,
+  scrubSpecForContrib,
+} from "./contrib-scrub";
 
 export const CONTRIB_REPO = "rhelmer/filelathe";
 export const CONTRIB_BRANCH = "main";
@@ -23,8 +30,12 @@ export type ContribPayload = {
   sandboxKey: string;
   scope: "content" | "extension";
   savedAt: string;
+  /** Invent prompt with sample/hex sections redacted. */
   prompt?: string;
+  /** Spec structure only — file payloads emptied. */
   spec: SandboxRecord["spec"];
+  /** True when sample/hex/bodies were stripped for public contribution. */
+  contentsRedacted: true;
 };
 
 export function contribFilename(record: SandboxRecord): string {
@@ -34,18 +45,21 @@ export function contribFilename(record: SandboxRecord): string {
 }
 
 export function buildContribPayload(record: SandboxRecord): ContribPayload {
+  const ext = record.extension || "bin";
   return {
     version: 1,
     source: "filelathe",
     inventedBy: "haiku",
-    extension: record.extension,
+    extension: ext,
     mimeType: record.mimeType,
-    filenameHint: record.filenameHint,
+    // Avoid leaking the user's real filename into a public PR.
+    filenameHint: `example.${ext}`,
     sandboxKey: record.key,
     scope: record.scope,
     savedAt: new Date(record.savedAt).toISOString(),
-    prompt: record.prompt,
-    spec: record.spec,
+    prompt: scrubPromptForContrib(record.prompt),
+    spec: scrubSpecForContrib(record.spec),
+    contentsRedacted: true,
   };
 }
 
@@ -75,7 +89,7 @@ export type ProposeResult = {
 };
 
 /**
- * Copy mini-app JSON to the clipboard, then open GitHub's new-file page.
+ * Copy scrubbed mini-app JSON to the clipboard, then open GitHub's new-file page.
  * User pastes into the editor, commits on a branch, and opens a PR.
  */
 export async function proposeSpecOnGithub(
@@ -83,14 +97,14 @@ export async function proposeSpecOnGithub(
 ): Promise<ProposeResult> {
   const filename = contribFilename(record);
   const body = contribJson(record);
-  const message = `Add Haiku mini-app for .${record.extension || "bin"} (${record.filenameHint})`;
+  const message = `Add Haiku mini-app for .${record.extension || "bin"}`;
   const description = [
     "Contributed from a local Filelathe session (json-render Spec).",
     "",
     `- Extension: \`.${record.extension || "bin"}\``,
     `- MIME: \`${record.mimeType}\``,
-    `- Hint filename: \`${record.filenameHint}\``,
     "",
+    "Dropped-file contents (samples, hex, Textarea bodies) were redacted before paste.",
     "Please review the mini-app Spec before merging.",
   ].join("\n");
 

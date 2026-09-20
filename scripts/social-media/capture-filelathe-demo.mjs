@@ -2,7 +2,8 @@
 /**
  * Capture Filelathe social stills + demo videos.
  *
- * Demo beat: tracker Play → invent mini-app → Show saved mini-apps.
+ * Demo beat: tracker Play → draw on image → browse rhelmer.org/projects →
+ * invent mini-app (tabs) → Show saved mini-apps.
  * Playwright video is silent; we decode the MOD with chiptune3 and adelay
  * the WAV so music starts when Play is clicked.
  *
@@ -51,7 +52,12 @@ const modBasename = MOD_SOURCE
 const modPath = path.join(fixturesDir, modBasename);
 const publicModPath = path.join(publicDemoDir, modBasename);
 const ednPath = path.join(fixturesDir, "orbit-config.edn");
+const imagePath = path.join(fixturesDir, "demo-draw.png");
+const DEMO_PAGE_URL =
+  process.env.FILELATHE_DEMO_PAGE_URL ?? "https://www.rhelmer.org/";
 const trackerWavPath = path.join(tmpDir, "tracker-demo.wav");
+/** Seconds of tracker audio to decode (cover longer demo). */
+const TRACKER_AUDIO_SECONDS = 70;
 
 fs.mkdirSync(tmpDir, { recursive: true });
 fs.mkdirSync(outDir, { recursive: true });
@@ -90,6 +96,15 @@ function ensureEdn() {
   );
 }
 
+function ensureImage() {
+  const og = path.join(root, "public/og.png");
+  if (fs.existsSync(imagePath) && fs.statSync(imagePath).size > 1000) return;
+  if (!fs.existsSync(og)) {
+    throw new Error(`Missing demo image fixture and ${og}`);
+  }
+  fs.copyFileSync(og, imagePath);
+}
+
 async function waitForWindowCount(page, minCount, timeout = 120_000) {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
@@ -114,6 +129,13 @@ async function waitForWindow(page, timeout = 120_000) {
 async function uploadFile(page, filePath) {
   const input = page.locator('input[type="file"]').first();
   await input.setInputFiles(filePath);
+}
+
+async function openUrl(page, url) {
+  const field = page.locator('input[type="url"]').first();
+  await field.waitFor({ state: "visible", timeout: 30_000 });
+  await field.fill(url);
+  await page.getByRole("button", { name: /^Open URL$/i }).click();
 }
 
 async function clickTrackerPlay(page) {
@@ -141,7 +163,7 @@ async function clickTrackerPlay(page) {
  * Decode the demo MOD to WAV via /mod-render.html (chiptune3 decodeAll).
  */
 async function renderTrackerWav(browser) {
-  const renderUrl = `${renderBase}/mod-render.html?mod=/demo/${encodeURIComponent(modBasename)}&max=40`;
+  const renderUrl = `${renderBase}/mod-render.html?mod=/demo/${encodeURIComponent(modBasename)}&max=${TRACKER_AUDIO_SECONDS}`;
   console.log(`Rendering tracker audio: ${renderUrl}`);
   const context = await browser.newContext();
   const page = await context.newPage();
@@ -174,12 +196,21 @@ async function renderTrackerWav(browser) {
   fs.copyFileSync(trackerWavPath, path.join(outDir, "tracker-demo.wav"));
 }
 
-/** Mux silent screen capture with tracker WAV, delayed until Play was clicked. */
-function muxVideoWithTracker(stagedWebm, cfg, audioDelayMs) {
+/** Mux silent screen capture with tracker WAV, delayed until Play was clicked.
+ *  leadTrimMs drops Playwright’s blank about:blank / pre-paint frames. */
+function muxVideoWithTracker(stagedWebm, cfg, audioDelayMs, leadTrimMs = 0) {
   const { width, height } = cfg.viewport;
-  const delay = Math.max(0, Math.round(audioDelayMs));
+  const trimMs = Math.max(0, Math.round(leadTrimMs));
+  const delay = Math.max(0, Math.round(audioDelayMs) - trimMs);
+  const trimSec = (trimMs / 1000).toFixed(3);
   const fadeInAt = (delay / 1000).toFixed(3);
-  console.log(`  audio delay ${delay}ms (music starts on Play)`);
+  console.log(
+    `  audio delay ${delay}ms (Play), lead trim ${trimMs}ms`,
+  );
+  const vchain =
+    trimMs > 0
+      ? `[0:v]trim=start=${trimSec},setpts=PTS-STARTPTS,scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=#f7f5ef,format=yuv420p[v]`
+      : `[0:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=#f7f5ef,format=yuv420p[v]`;
   run("ffmpeg", [
     "-y",
     "-i",
@@ -187,7 +218,7 @@ function muxVideoWithTracker(stagedWebm, cfg, audioDelayMs) {
     "-i",
     trackerWavPath,
     "-filter_complex",
-    `[0:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=#f7f5ef,format=yuv420p[v];[1:a]adelay=${delay}:all=1,afade=t=in:st=${fadeInAt}:d=0.25,loudnorm=I=-16:TP=-1.5:LRA=11[a]`,
+    `${vchain};[1:a]adelay=${delay}:all=1,afade=t=in:st=${fadeInAt}:d=0.25,loudnorm=I=-16:TP=-1.5:LRA=11[a]`,
     "-map",
     "[v]",
     "-map",
@@ -230,10 +261,126 @@ async function captureStill(page) {
 /**
  * Demo beat:
  * 1) Drop tracker → Play (music starts here)
- * 2) Invent a mini-app from unknown file
- * 3) Minimize tracker, expand invent, click its tabs
- * 4) Minimize invent, then open "Show saved mini-apps"
+ * 2) Open image → draw on PixelEditor
+ * 3) Open rhelmer.org → browse to /projects in the preview
+ * 4) Invent a mini-app → click tabs
+ * 5) Minimize, then open "Show saved mini-apps"
  */
+async function drawOnPixelEditor(page) {
+  const editor = page.locator("[data-pixel-editor]").first();
+  await editor.waitFor({ state: "visible", timeout: 90_000 });
+  await page.waitForTimeout(800);
+
+  const win = page
+    .locator("[data-filelathe-window]")
+    .filter({ has: page.locator("[data-pixel-editor]") })
+    .first();
+  const expandBtn = win.getByRole("button", { name: /^(Expand|Maximize)$/i });
+  if ((await expandBtn.count()) > 0) {
+    await expandBtn.first().click({ force: true });
+    await page.waitForTimeout(500);
+  }
+
+  const red = editor.getByRole("button", { name: /Color #ef4444/i });
+  if ((await red.count()) > 0) await red.click({ force: true });
+
+  const brush = editor.locator('input[type="range"]').first();
+  if ((await brush.count()) > 0) {
+    await brush.fill("14");
+  }
+
+  const canvas = editor.locator("[data-pixel-canvas]").first();
+  await canvas.waitFor({ state: "visible", timeout: 30_000 });
+  const box = await canvas.boundingBox();
+  if (!box) throw new Error("PixelEditor canvas has no box");
+
+  const strokes = [
+    [
+      [0.2, 0.35],
+      [0.45, 0.55],
+      [0.7, 0.3],
+    ],
+    [
+      [0.25, 0.65],
+      [0.55, 0.7],
+      [0.75, 0.55],
+    ],
+  ];
+  for (const stroke of strokes) {
+    const [first, ...rest] = stroke;
+    await page.mouse.move(
+      box.x + first[0] * box.width,
+      box.y + first[1] * box.height,
+    );
+    await page.mouse.down();
+    for (const [nx, ny] of rest) {
+      await page.mouse.move(box.x + nx * box.width, box.y + ny * box.height, {
+        steps: 12,
+      });
+      await page.waitForTimeout(80);
+    }
+    await page.mouse.up();
+    await page.waitForTimeout(350);
+  }
+  console.log("  drew on PixelEditor");
+  await page.waitForTimeout(1800);
+  await page.screenshot({
+    path: path.join(tmpDir, "draw-still.png"),
+    fullPage: false,
+  });
+}
+
+async function browseRhelmerProjects(page) {
+  const viewer = page.locator("[data-webpage-viewer]").first();
+  await viewer.waitFor({ state: "visible", timeout: 90_000 });
+  await page.waitForTimeout(1500);
+
+  const win = page
+    .locator("[data-filelathe-window]")
+    .filter({ has: page.locator("[data-webpage-viewer]") })
+    .first();
+  const expandBtn = win.getByRole("button", { name: /^(Expand|Maximize)$/i });
+  if ((await expandBtn.count()) > 0) {
+    await expandBtn.first().click({ force: true });
+    await page.waitForTimeout(500);
+  }
+
+  // Dwell on homepage, then navigate in-preview to /projects/
+  // (iframe is often too narrow for the site's desktop nav to be clickable)
+  await page.waitForTimeout(2000);
+  const projectsUrl = new URL("/projects/", DEMO_PAGE_URL).href;
+  const iframeHandle = await viewer.locator("iframe").first().elementHandle();
+  const frame = iframeHandle ? await iframeHandle.contentFrame() : null;
+  if (frame) {
+    await frame.evaluate((href) => {
+      window.location.assign(href);
+    }, projectsUrl);
+    console.log("  navigated preview → /projects/");
+  } else {
+    console.log("  no iframe frame — opening /projects via Open URL");
+    await minimizeAllWindows(page);
+    await openUrl(page, projectsUrl);
+    await page
+      .locator("[data-webpage-viewer]")
+      .first()
+      .waitFor({ state: "visible", timeout: 90_000 });
+  }
+
+  await page
+    .waitForFunction(() => {
+      const iframe = document.querySelector("[data-webpage-viewer] iframe");
+      if (!(iframe instanceof HTMLIFrameElement)) return false;
+      return /\/projects\/?/i.test(iframe.src || "");
+    }, { timeout: 15_000 })
+    .catch(() => undefined);
+
+  await page.waitForTimeout(3200);
+  await page.screenshot({
+    path: path.join(tmpDir, "projects-still.png"),
+    fullPage: false,
+  });
+}
+
 async function clickInventedTabs(page) {
   // Get the invent window out of the tracker’s shadow.
   await minimizeWindowMatching(page, /\.mod|Tracker|demian/i);
@@ -336,9 +483,23 @@ async function minimizeWindowMatching(page, pattern) {
   return true;
 }
 
+async function minimizeAllWindows(page) {
+  for (let pass = 0; pass < 8; pass++) {
+    const btn = page.getByRole("button", { name: /^Minimize$/i }).first();
+    if ((await btn.count()) === 0) break;
+    await btn.click({ force: true }).catch(() => undefined);
+    await page.waitForTimeout(250);
+  }
+}
+
 async function runDemoScene(page, videoEpochMs) {
-  await page.goto(siteUrl + "/", { waitUntil: "networkidle", timeout: 60_000 });
-  await page.waitForTimeout(900);
+  await page.goto(siteUrl + "/", { waitUntil: "domcontentloaded", timeout: 60_000 });
+  await page
+    .getByRole("heading", { name: /^Filelathe$/i })
+    .waitFor({ state: "visible", timeout: 60_000 });
+  // First painted frame — trim blank about:blank / pre-paint from the recording
+  const leadTrimMs = Date.now() - videoEpochMs;
+  await page.waitForTimeout(400);
 
   // 1) Tracker module first
   await uploadFile(page, modPath);
@@ -346,30 +507,52 @@ async function runDemoScene(page, videoEpochMs) {
   await page.waitForTimeout(1000);
   await clickTrackerPlay(page);
   const audioDelayMs = Date.now() - videoEpochMs;
-  console.log(`  Play clicked @ ${audioDelayMs}ms`);
-  await page.waitForTimeout(5500);
+  console.log(`  Play clicked @ ${audioDelayMs}ms (lead trim ${leadTrimMs}ms)`);
+  await page.waitForTimeout(4500);
+  await minimizeWindowMatching(page, /\.mod|Tracker|demian/i);
 
-  // 2) Invent UI for an unknown format
+  // 2) Pixel editor — draw on an image
+  await uploadFile(page, imagePath);
+  await page
+    .locator("[data-pixel-editor]")
+    .first()
+    .waitFor({ state: "visible", timeout: 120_000 });
+  await drawOnPixelEditor(page);
+  await minimizeAllWindows(page);
+  await page.waitForTimeout(400);
+
+  // 3) Web page — open rhelmer.org and browse to Projects
+  await openUrl(page, DEMO_PAGE_URL);
+  await page
+    .locator("[data-webpage-viewer]")
+    .first()
+    .waitFor({ state: "visible", timeout: 120_000 });
+  await browseRhelmerProjects(page);
+  await minimizeAllWindows(page);
+  await page.waitForTimeout(400);
+
+  // 4) Invent UI for an unknown format
+  const inventBefore = await page
+    .locator("[data-filelathe-window]")
+    .filter({ hasText: /orbit-config|\.edn/i })
+    .count();
   await uploadFile(page, ednPath);
-  await waitForWindowCount(page, 2, 180_000);
-  // Wait until invent body has settled (tabs or content)
+  await page
+    .locator("[data-filelathe-window]")
+    .filter({ hasText: /orbit-config|\.edn/i })
+    .nth(inventBefore)
+    .waitFor({ state: "visible", timeout: 180_000 })
+    .catch(async () => {
+      await waitForWindowCount(page, inventBefore + 1, 180_000);
+    });
   await page.waitForTimeout(2800);
-
-  // 3) Click through invented mini-app tabs (tracker minimized inside)
   await clickInventedTabs(page);
 
-  // 4) Minimize invent so the saved-apps panel is visible
-  await minimizeWindowMatching(page, /orbit-config|\.edn/i);
-  await minimizeWindowMatching(page, /\.mod|Tracker|demian/i);
-  const minimizeButtons = page.getByRole("button", { name: /^Minimize$/i });
-  const nMin = await minimizeButtons.count();
-  for (let i = 0; i < nMin; i++) {
-    await minimizeButtons.nth(i).click({ force: true }).catch(() => undefined);
-    await page.waitForTimeout(200);
-  }
+  // 5) Minimize everything so the saved-apps panel is visible
+  await minimizeAllWindows(page);
   await page.waitForTimeout(700);
 
-  // 5) Expand saved mini-apps — show the local Haiku save
+  // 6) Expand saved mini-apps — show the local Haiku save
   const showSaved = page.getByRole("button", {
     name: /Show saved mini-apps/i,
   });
@@ -381,9 +564,9 @@ async function runDemoScene(page, videoEpochMs) {
     await refresh.click({ force: true }).catch(() => undefined);
     await page.waitForTimeout(800);
   }
-  await page.waitForTimeout(5500);
+  await page.waitForTimeout(4500);
 
-  return { audioDelayMs };
+  return { audioDelayMs, leadTrimMs };
 }
 
 async function recordVideos(browser) {
@@ -417,7 +600,7 @@ async function recordVideos(browser) {
     });
     const page = await context.newPage();
     const videoEpochMs = Date.now();
-    const { audioDelayMs } = await runDemoScene(page, videoEpochMs);
+    const { audioDelayMs, leadTrimMs } = await runDemoScene(page, videoEpochMs);
     await page.close();
     await context.close();
 
@@ -434,7 +617,7 @@ async function recordVideos(browser) {
     const staged = path.join(tmpDir, `${cfg.name}.webm`);
     fs.renameSync(path.join(tmpDir, latest), staged);
 
-    muxVideoWithTracker(staged, cfg, audioDelayMs);
+    muxVideoWithTracker(staged, cfg, audioDelayMs, leadTrimMs);
     console.log(`Video: ${cfg.mp4}`);
   }
 }
@@ -442,6 +625,7 @@ async function recordVideos(browser) {
 async function main() {
   ensureEdn();
   ensureMod();
+  ensureImage();
 
   console.log(`Capture URL: ${siteUrl}`);
   console.log(`Render URL base: ${renderBase}`);

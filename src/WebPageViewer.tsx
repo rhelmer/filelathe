@@ -18,7 +18,7 @@ export function WebPageViewer({
   );
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3" data-webpage-viewer="">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex gap-1 rounded-full border bg-muted/40 p-0.5">
           <button
@@ -72,8 +72,8 @@ export function WebPageViewer({
 
       <p className="text-xs text-muted-foreground">
         Snapshot with a base URL so relative images/CSS/links resolve against
-        the original site. Links open in a new tab. JS-injected assets may still
-        be missing — use Open original for the live page.
+        the original site. In-preview links browse here; use Open original for
+        the live page. JS-injected assets may still be missing.
       </p>
     </div>
   );

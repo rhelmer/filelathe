@@ -80,7 +80,7 @@ export function SavedSpecsPanel({
         toast({
           title: "Mini-app copied to clipboard",
           description:
-            "Opening GitHub in a moment. Click the editor, paste (⌘V / Ctrl+V), commit on a new branch, then open a pull request.",
+            "File contents were redacted. Opening GitHub in a moment — paste (⌘V / Ctrl+V), commit on a new branch, then open a pull request.",
           variant: "success",
           durationMs: 16_000,
         });
@@ -162,9 +162,11 @@ export function SavedSpecsPanel({
               {CONTRIB_REPO}
             </a>{" "}
             — GitHub opens a new file under{" "}
-            <code className="text-[11px]">contrib/invented/</code>. Contents are
-            copied to your clipboard first — paste into the editor, then commit
-            / PR (GitHub will fork if needed).
+            <code className="text-[11px]">contrib/invented/</code>. Propose PR /
+            Download strip your file contents (samples, hex, Textarea bodies) and
+            anonymize the filename before copy — only the mini-app structure is
+            shared. Paste into the editor, then commit / PR (GitHub will fork if
+            needed).
           </p>
 
           {records.length === 0 ? (

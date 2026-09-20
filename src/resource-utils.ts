@@ -57,8 +57,8 @@ export function tryDecodeText(bytes: Uint8Array): string | null {
 
 /**
  * Make fetched HTML usable in a srcdoc iframe: resolve relative URLs against
- * the original page, open links in a new tab, and drop CSP metas that block
- * snapshot assets.
+ * the original page, browse in-frame by default, and drop CSP metas that block
+ * snapshot assets. Per-link `target="_blank"` still opens a new tab.
  */
 export function rewriteHtmlForSnapshot(
   html: string,
@@ -82,7 +82,7 @@ export function rewriteHtmlForSnapshot(
     }
     if (baseHref) {
       const safe = baseHref.replace(/"/g, "&quot;");
-      const baseTag = `<base href="${safe}" target="_blank">`;
+      const baseTag = `<base href="${safe}" target="_self">`;
       if (/<base\b/i.test(out)) {
         out = out.replace(/<base\b[^>]*>/i, baseTag);
       } else if (/<head[^>]*>/i.test(out)) {

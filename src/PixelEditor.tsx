@@ -91,7 +91,7 @@ export function PixelEditor({
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3" data-pixel-editor="">
       {props.title ? (
         <div className="text-sm font-medium">{props.title}</div>
       ) : null}
@@ -145,6 +145,7 @@ export function PixelEditor({
       <div className="overflow-auto rounded-lg border bg-muted/30 p-2">
         <canvas
           ref={canvasRef}
+          data-pixel-canvas=""
           className="mx-auto max-w-full touch-none"
           style={{
             imageRendering: pixelated ? "pixelated" : "auto",
