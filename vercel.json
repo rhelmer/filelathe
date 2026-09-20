@@ -16,6 +16,9 @@
     }
   },
   "rewrites": [
-    { "source": "/((?!api/|assets/).*)", "destination": "/index.html" }
+    {
+      "source": "/((?!api/|assets/|open/|formats/|guides/|robots\\.txt|sitemap\\.xml|seo\\.css|og\\.png|og\\.svg|favicon\\.svg|filelathe-logo\\.svg).*)",
+      "destination": "/index.html"
+    }
   ]
 }

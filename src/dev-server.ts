@@ -1,6 +1,8 @@
 import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { createServer as createViteServer } from "vite";
 import {
   handleCompose,
@@ -9,6 +11,8 @@ import {
 } from "./server/handlers";
 
 const port = Number(process.env.PORT ?? 5174);
+const rootDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
+const publicDir = path.join(rootDir, "public");
 
 const vite = await createViteServer({
   configFile: new URL("../vite.config.ts", import.meta.url).pathname,
@@ -84,6 +88,50 @@ async function handleApi(req: IncomingMessage, res: ServerResponse) {
   await writeWebResponse(res, response);
 }
 
+/** Map URL paths to public/ files (Vite does not auto-serve directory indexes). */
+async function resolvePublicFile(
+  pathname: string,
+): Promise<{ filePath: string; contentType: string } | null> {
+  const clean = pathname.split("?")[0] ?? pathname;
+  const candidates: Array<{ rel: string; type: string }> = [];
+
+  if (clean === "/robots.txt") {
+    candidates.push({ rel: "robots.txt", type: "text/plain; charset=utf-8" });
+  } else if (clean === "/sitemap.xml") {
+    candidates.push({
+      rel: "sitemap.xml",
+      type: "application/xml; charset=utf-8",
+    });
+  } else if (clean === "/seo.css") {
+    candidates.push({ rel: "seo.css", type: "text/css; charset=utf-8" });
+  } else if (
+    clean === "/open" ||
+    clean.startsWith("/open/") ||
+    clean === "/formats" ||
+    clean.startsWith("/formats/") ||
+    clean === "/guides" ||
+    clean.startsWith("/guides/")
+  ) {
+    const base = clean.endsWith("/") ? clean.slice(0, -1) : clean;
+    candidates.push(
+      { rel: `${base.slice(1)}/index.html`, type: "text/html; charset=utf-8" },
+      { rel: `${base.slice(1)}.html`, type: "text/html; charset=utf-8" },
+    );
+  }
+
+  for (const candidate of candidates) {
+    const filePath = path.join(publicDir, candidate.rel);
+    if (!filePath.startsWith(publicDir)) continue;
+    try {
+      await access(filePath);
+      return { filePath, contentType: candidate.type };
+    } catch {
+      // try next
+    }
+  }
+  return null;
+}
+
 const server = createServer((req, res) => {
   if (req.url?.startsWith("/api/")) {
     handleApi(req, res).catch((error) => {
@@ -117,45 +165,19 @@ const server = createServer((req, res) => {
         return;
       }
 
-      const template = `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Filelathe</title>
-    <meta
-      name="description"
-      content="Drop a file or paste a URL and get the right tool — or a json-render mini-app invented for formats nothing else handles."
-    />
-    <link rel="canonical" href="https://filelathe.com/" />
-    <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="Filelathe" />
-    <meta property="og:url" content="https://filelathe.com/" />
-    <meta property="og:title" content="Filelathe" />
-    <meta
-      property="og:description"
-      content="Swiss-army file utility: drop a file, get the right tool — or a mini-app invented for it. Built with json-render."
-    />
-    <meta property="og:image" content="https://filelathe.com/og.png" />
-    <meta property="og:image:type" content="image/png" />
-    <meta property="og:image:width" content="1200" />
-    <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="Filelathe — swiss-army file utility" />
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Filelathe" />
-    <meta
-      name="twitter:description"
-      content="Drop a file. Get the right tool — or a mini-app invented for it. Built with json-render."
-    />
-    <meta name="twitter:image" content="https://filelathe.com/og.png" />
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="/filelathe-logo.svg" />
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
-</html>`;
+      const pub = await resolvePublicFile(pathname);
+      if (pub) {
+        const body = await readFile(pub.filePath);
+        res.statusCode = 200;
+        res.setHeader("Content-Type", pub.contentType);
+        res.end(body);
+        return;
+      }
+
+      const template = await readFile(
+        new URL("../index.html", import.meta.url),
+        "utf8",
+      );
       const html = await vite.transformIndexHtml(pageUrl, template);
       res.statusCode = 200;
       res.setHeader("Content-Type", "text/html");

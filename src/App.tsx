@@ -740,8 +740,9 @@ export function App() {
             </div>
           </div>
           <p className="max-w-2xl text-muted-foreground">
-            Drop files or paste URLs. Known types get dedicated tools; unknowns
-            get a Haiku-invented mini-app for that format.
+            Drop a file or paste a URL to open it in your browser — play XM/MOD
+            trackers, view PDFs, edit images, inspect CSV/JSON, or invent a
+            mini-app for formats nothing else handles.
           </p>
         </header>
 
@@ -848,6 +849,24 @@ export function App() {
             On phones, use Expand instead of pop-out.
           </p>
         ) : null}
+
+        <footer className="mt-8 flex flex-wrap gap-x-4 gap-y-2 border-t border-border/60 pt-4 text-xs text-muted-foreground">
+          <a className="underline-offset-2 hover:underline" href="/formats/">
+            Formats
+          </a>
+          <a className="underline-offset-2 hover:underline" href="/guides/">
+            Guides
+          </a>
+          <a
+            className="underline-offset-2 hover:underline"
+            href="/guides/open-tracker-modules-online/"
+          >
+            Play XM/MOD online
+          </a>
+          <a className="underline-offset-2 hover:underline" href="/sitemap.xml">
+            Sitemap
+          </a>
+        </footer>
       </div>
 
       <div className="pointer-events-none absolute inset-0 z-20">

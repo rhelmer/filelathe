@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch --exclude '{**/node_modules/**,**/.vite-temp/**,**/.vite/**}' --env-file=.env src/dev-server.ts",
-    "build": "vite build && node scripts/bundle-api.mjs",
+    "predev": "tsx scripts/generate-seo.ts",
+    "seo:generate": "tsx scripts/generate-seo.ts",
+    "build": "tsx scripts/generate-seo.ts && vite build && node scripts/bundle-api.mjs",
     "build:api": "node scripts/bundle-api.mjs",
     "preview": "vite preview",
     "list-candidates": "tsx src/list.ts",
