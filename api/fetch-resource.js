@@ -147,6 +147,76 @@ var catalog = defineCatalog(schema, {
   }
 });
 
+// src/invent-catalog.ts
+import { defineCatalog as defineCatalog2 } from "@json-render/core";
+import { schema as schema2 } from "@json-render/react/schema";
+import { shadcnComponentDefinitions as shadcnComponentDefinitions2 } from "@json-render/shadcn/catalog";
+import { z as z2 } from "zod";
+var INVENT_SHADCN = [
+  "Card",
+  "Stack",
+  "Grid",
+  "Separator",
+  "Tabs",
+  "Accordion",
+  "Heading",
+  "Text",
+  "Badge",
+  "Alert",
+  "Input",
+  "Textarea",
+  "Button",
+  "Link"
+];
+function pickShadcn(names) {
+  const all = shadcnComponentDefinitions2;
+  const out = {};
+  for (const name of names) {
+    const def = all[name];
+    if (!def) continue;
+    const props = def.props;
+    if (props?.shape && "className" in props.shape) {
+      out[name] = { ...def, props: props.omit({ className: true }) };
+    } else {
+      out[name] = def;
+    }
+  }
+  return out;
+}
+var inventExtras = {
+  MarkdownView: {
+    props: z2.object({
+      markdown: z2.string(),
+      title: z2.string().nullable()
+    }),
+    description: "Rendered Markdown (GFM). Prefer for Preview panes; put body in Spec.state and $bindState when editable elsewhere."
+  },
+  Metric: {
+    props: z2.object({
+      label: z2.string(),
+      value: z2.string(),
+      change: z2.string().nullable(),
+      changeType: z2.enum(["positive", "negative", "neutral"]).nullable(),
+      prefix: z2.string().nullable(),
+      suffix: z2.string().nullable()
+    }),
+    description: "Small KPI chip for Overview panes (file size, key count, etc.)"
+  }
+};
+var inventCatalog = defineCatalog2(schema2, {
+  components: {
+    ...pickShadcn(INVENT_SHADCN),
+    ...inventExtras
+  },
+  actions: {
+    formSubmit: {
+      description: "Demo form toast (no network)",
+      params: z2.object({ formName: z2.string() })
+    }
+  }
+});
+var INVENT_COMPONENT_NAMES = inventCatalog.componentNames;
+
 // src/resource-utils.ts
 function isProbablyUrl(value) {
   const trimmed = value.trim();
@@ -325,7 +395,11 @@ async function enforceMemoryLimit(kv, bucket, clientKey, config) {
   return { allowed: true };
 }
 async function enforceRateLimit(bucket, clientKey, config = RATE_LIMITS[bucket]) {
-  if (hasUpstash()) {
+  if (process.env.FILELATHE_DISABLE_RATE_LIMIT === "1") {
+    return { allowed: true };
+  }
+  const onVercel = Boolean(process.env.VERCEL);
+  if (hasUpstash() && onVercel) {
     const result = await upstashLimiter(bucket).limit(`${bucket}:${clientKey}`);
     if (!result.success) {
       const retryAfter = Math.max(

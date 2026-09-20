@@ -106,7 +106,7 @@ export function toastMessageForApiError(error: unknown): {
   if (error instanceof ApiRequestError) {
     if (error.code === "rate_limit") {
       return {
-        title: "Slow down",
+        title: "Slow down — rate limited",
         description: error.message,
         variant: "warning",
       };
@@ -137,9 +137,38 @@ export function toastMessageForApiError(error: unknown): {
       variant: "error",
     };
   }
+  if (error instanceof Error) {
+    const msg = error.message || String(error);
+    if (
+      error.name === "AbortError" ||
+      /aborted|timeout/i.test(msg)
+    ) {
+      return {
+        title: "Request timed out",
+        description: "The server took too long. Is pnpm dev still running?",
+        variant: "error",
+      };
+    }
+    if (
+      error.name === "TypeError" ||
+      /failed to fetch|networkerror|load failed/i.test(msg)
+    ) {
+      return {
+        title: "Can't reach Filelathe server",
+        description:
+          "Local API is down — restart with pnpm dev, then hard-refresh this tab.",
+        variant: "error",
+      };
+    }
+    return {
+      title: "Something went wrong",
+      description: msg,
+      variant: "error",
+    };
+  }
   return {
     title: "Something went wrong",
-    description: error instanceof Error ? error.message : String(error),
+    description: String(error),
     variant: "error",
   };
 }

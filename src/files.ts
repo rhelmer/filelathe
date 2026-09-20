@@ -363,8 +363,52 @@ function cleanTitle(raw: string) {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+/**
+ * macOS Finder "Recents" (and iCloud placeholders) often hand the browser a
+ * File that looks selectable but cannot be read — size 0, or arrayBuffer()
+ * throws NotReadableError — with no useful OS error. Fail early with guidance.
+ */
+export async function ensureReadableBrowserFile(file: File): Promise<void> {
+  const recentsHint =
+    "macOS Recents / iCloud picks often fail in the browser. Choose the file from Downloads, Documents, or its real folder instead (download it first if it shows a cloud icon).";
+
+  if (file.size === 0) {
+    // Probe: some Recents stubs report size 0 even when the real file isn't empty.
+    let probed = 0;
+    try {
+      probed = (await file.slice(0, 64).arrayBuffer()).byteLength;
+    } catch {
+      throw new Error(`Couldn't read “${file.name}”. ${recentsHint}`);
+    }
+    if (probed === 0) {
+      throw new Error(
+        `“${file.name}” arrived empty (0 bytes). ${recentsHint}`,
+      );
+    }
+  }
+
+  try {
+    const probe = await file.slice(0, Math.min(file.size, 64)).arrayBuffer();
+    if (file.size > 0 && probe.byteLength === 0) {
+      throw new Error(`Couldn't read “${file.name}”. ${recentsHint}`);
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("Recents")) throw error;
+    const name = error instanceof Error ? error.name : "";
+    if (
+      name === "NotReadableError" ||
+      name === "NotFoundError" ||
+      name === "SecurityError"
+    ) {
+      throw new Error(`Couldn't read “${file.name}”. ${recentsHint}`);
+    }
+    throw error;
+  }
+}
+
 /** Read a browser File into a typed payload the composer can use. */
 export async function loadDroppedFile(file: File): Promise<LoadedFile> {
+  await ensureReadableBrowserFile(file);
   const kind = detectKind(file);
   const title = titleFromFilename(file.name);
   const mimeType = file.type || "application/octet-stream";

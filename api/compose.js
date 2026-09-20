@@ -147,114 +147,223 @@ var catalog = defineCatalog(schema, {
   }
 });
 
+// src/invent-catalog.ts
+import { defineCatalog as defineCatalog2 } from "@json-render/core";
+import { schema as schema2 } from "@json-render/react/schema";
+import { shadcnComponentDefinitions as shadcnComponentDefinitions2 } from "@json-render/shadcn/catalog";
+import { z as z2 } from "zod";
+var INVENT_SHADCN = [
+  "Card",
+  "Stack",
+  "Grid",
+  "Separator",
+  "Tabs",
+  "Accordion",
+  "Heading",
+  "Text",
+  "Badge",
+  "Alert",
+  "Input",
+  "Textarea",
+  "Button",
+  "Link"
+];
+function pickShadcn(names) {
+  const all = shadcnComponentDefinitions2;
+  const out = {};
+  for (const name of names) {
+    const def = all[name];
+    if (!def) continue;
+    const props = def.props;
+    if (props?.shape && "className" in props.shape) {
+      out[name] = { ...def, props: props.omit({ className: true }) };
+    } else {
+      out[name] = def;
+    }
+  }
+  return out;
+}
+var inventExtras = {
+  MarkdownView: {
+    props: z2.object({
+      markdown: z2.string(),
+      title: z2.string().nullable()
+    }),
+    description: "Rendered Markdown (GFM). Prefer for Preview panes; put body in Spec.state and $bindState when editable elsewhere."
+  },
+  Metric: {
+    props: z2.object({
+      label: z2.string(),
+      value: z2.string(),
+      change: z2.string().nullable(),
+      changeType: z2.enum(["positive", "negative", "neutral"]).nullable(),
+      prefix: z2.string().nullable(),
+      suffix: z2.string().nullable()
+    }),
+    description: "Small KPI chip for Overview panes (file size, key count, etc.)"
+  }
+};
+var inventCatalog = defineCatalog2(schema2, {
+  components: {
+    ...pickShadcn(INVENT_SHADCN),
+    ...inventExtras
+  },
+  actions: {
+    formSubmit: {
+      description: "Demo form toast (no network)",
+      params: z2.object({ formName: z2.string() })
+    }
+  }
+});
+var INVENT_COMPONENT_NAMES = inventCatalog.componentNames;
+
 // src/invent-prompt.ts
 function detectContentKind(filename, sampleText) {
   const name = filename.toLowerCase();
   const sample = sampleText?.trim() ?? "";
-  if (name.endsWith(".toml") || name.endsWith(".ini") || name.endsWith(".cfg")) {
+  if (name.endsWith(".edn") || name.endsWith(".clj") || name.endsWith(".cljs") || /^\s*[;({[]/.test(sample) && /:\w+/.test(sample)) {
+    return {
+      kind: "edn/clojure config",
+      language: "edn",
+      hint: "Mini-app: Tabs Text (editable Textarea bound to /body) | Hex | Structure (Alert or Badges for top-level keys like :app/:format). Put full sample in state.body."
+    };
+  }
+  if (name.endsWith(".toml") || name.endsWith(".ini") || name.endsWith(".cfg") || name.endsWith(".conf") || name.endsWith(".properties")) {
     return {
       kind: "toml/ini config",
-      language: "toml",
-      hint: "Mini-app: Tabs for Overview (parsed key highlights as Badge/Text) | Edit (Textarea with full sample in state) | Raw. Prefer editing over a static dump."
+      language: name.endsWith(".properties") ? "properties" : "toml",
+      hint: "Mini-app: Tabs Overview (Badge/Text for section keys) | Edit (Textarea /body) | Raw. Prefer editing over a static dump."
     };
   }
   if (name.endsWith(".yaml") || name.endsWith(".yml")) {
     return {
       kind: "yaml",
       language: "yaml",
-      hint: "Mini-app: Tabs Overview | Edit (Textarea bound to state) | Raw. Surface top-level keys as Badges."
+      hint: "Mini-app: Tabs Overview | Edit (Textarea /body) | Raw. Surface top-level keys as Badges."
     };
   }
-  if (name.endsWith(".json") || name.endsWith(".jsonl") || sample.startsWith("{") || sample.startsWith("[")) {
+  if (name.endsWith(".json") || name.endsWith(".jsonl") || name.endsWith(".jsonc") || sample.startsWith("{") || sample.startsWith("[")) {
     return {
       kind: "json",
       language: "json",
-      hint: "Mini-app: Tabs Overview (Metrics/Badges for key fields) | Edit (Textarea with pretty JSON in state) | Raw. Not a single Markdown dump."
+      hint: "Mini-app: Tabs Overview (Metric/Badge for key fields) | Edit (Textarea with pretty JSON in /body) | Raw. Not a single Markdown dump."
     };
   }
-  if (name.endsWith(".xml") || name.endsWith(".html") || name.endsWith(".htm") || sample.startsWith("<")) {
+  if (name.endsWith(".xml") || name.endsWith(".html") || name.endsWith(".htm") || name.endsWith(".svg") || sample.startsWith("<")) {
     return {
       kind: "markup",
-      language: "xml",
-      hint: "Mini-app: Tabs Preview (MarkdownView fenced) | Edit (Textarea) | Structure notes (Alert). Keep editable."
+      language: name.endsWith(".svg") ? "svg" : "xml",
+      hint: "Mini-app: Tabs Preview (MarkdownView fenced) | Edit (Textarea /body) | Notes (Alert). Keep editable."
     };
   }
   if (/\.lhs$/i.test(name)) {
     return {
       kind: "literate haskell",
       language: "haskell",
-      hint: "Mini-app for literate Haskell: Tabs \u2014 Code (only lines starting with '>' stripped of the bird track, in a Textarea or fenced MarkdownView) | Literate (full sample) | Notes (Alert explaining bird-style '>' code vs prose). Put both views' text in Spec.state. Do NOT only show one static card with a tip."
+      hint: "Mini-app: Tabs Code (bird '>' lines stripped into Textarea /code) | Literate (full /body) | Notes (Alert). Both texts in Spec.state."
     };
   }
   if (/\.hs$/i.test(name)) {
     return {
       kind: "haskell",
       language: "haskell",
-      hint: "Mini-app: Tabs Code (Textarea/Markdown fence) | Exports (Badges for module/imports if present) | Raw. Editable source in state."
+      hint: "Mini-app: Tabs Code (Textarea /body) | Exports (Badges) | Raw."
     };
   }
-  if (/\.(ts|tsx|js|jsx|mjs|cjs|py|go|rs|java|kt|c|h|cpp|hpp|cs|rb|php|swift|sql|css|scss|sh|bash|zsh)$/i.test(
+  if (/\.(ts|tsx|js|jsx|mjs|cjs|py|go|rs|java|kt|c|h|cpp|hpp|cs|rb|php|swift|sql|css|scss|sh|bash|zsh|lua|r|pl)$/i.test(
     name
   )) {
     const language = name.split(".").pop() || "code";
     return {
       kind: "source code",
       language,
-      hint: `Mini-app: Tabs Code (editable Textarea or Markdown fence for ${language}) | Symbols (Badges for imports/exports/functions if obvious from sample) | Raw. Source must live in Spec.state so it can be edited.`
+      hint: `Mini-app: Tabs Code (Textarea /body for ${language}) | Symbols (Badges) | Raw.`
     };
   }
-  if (name.endsWith(".md") || name.endsWith(".markdown")) {
+  if (name.endsWith(".md") || name.endsWith(".markdown") || name.endsWith(".rst") || name.endsWith(".adoc")) {
     return {
       kind: "markdown",
       language: "markdown",
-      hint: "Mini-app: Tabs Preview (MarkdownView) | Edit (Textarea bound to same markdown state). Two-way feel via shared state path."
+      hint: "Mini-app: Tabs Preview (MarkdownView bound to /body) | Edit (Textarea same /body)."
+    };
+  }
+  if (name.endsWith(".log") || name.endsWith(".out") || /\d{4}-\d{2}-\d{2}[ t]\d{2}:\d{2}/i.test(sample.slice(0, 400))) {
+    return {
+      kind: "log",
+      language: "text",
+      hint: "Mini-app: Tabs Log (Textarea /body) | Hex | Notes (Alert with line count / size)."
+    };
+  }
+  if (name.endsWith(".plist") || name.endsWith(".strings") || name.endsWith(".env") || name.endsWith(".env.example")) {
+    return {
+      kind: "env/plist",
+      language: "text",
+      hint: "Mini-app: Tabs Edit (Textarea /body) | Hex | Notes. Never invent fake secrets \u2014 use the sample only."
     };
   }
   if (sample.length > 0) {
     return {
       kind: "text",
       language: "text",
-      hint: "Mini-app: Tabs Text (editable Textarea) | Hex (Text with hexPreview). Avoid a single static paragraph."
+      hint: "Mini-app: Tabs Text (Textarea /body) | Hex (Text or Textarea /hex from hexPreview). Avoid a single static paragraph."
     };
   }
   return {
     kind: "binary/unknown",
     language: "bin",
-    hint: "Mini-app: metadata Stack + Hex Textarea/Text + Alert that no text decode was possible. Optional Badge for mime/size."
+    hint: "Mini-app: Tabs Hex (Textarea /hex) | Meta (Badges for mime/size + Alert). No fake text decode."
   };
 }
+var FEW_SHOTS = `
+EXAMPLE (config / text \u2014 follow this shape; replace bodies from the real sample):
+{"op":"set","path":"/state","value":{"activeTab":"text","body":"(file sample here)","hex":"(hex preview here)"}}
+{"op":"add","path":"/elements/card","value":{"type":"Card","props":{"title":null,"description":null,"maxWidth":"full","centered":null},"children":["tabs"]}}
+{"op":"add","path":"/elements/tabs","value":{"type":"Tabs","props":{"defaultValue":"text","value":{"$bindState":"/activeTab"},"tabs":[{"label":"Text","value":"text"},{"label":"Hex","value":"hex"}]},"children":["paneText","paneHex"]}}
+{"op":"add","path":"/elements/paneText","value":{"type":"Textarea","props":{"label":"Contents","name":"body","placeholder":null,"rows":12,"value":{"$bindState":"/body"},"checks":null,"validateOn":null},"children":[]}}
+{"op":"add","path":"/elements/paneHex","value":{"type":"Textarea","props":{"label":"Hex","name":"hex","placeholder":null,"rows":10,"value":{"$bindState":"/hex"},"checks":null,"validateOn":null},"children":[]}}
+{"op":"add","path":"/root","value":"card"}
+
+EXAMPLE (markdown \u2014 Preview + Edit sharing state):
+{"op":"set","path":"/state","value":{"activeTab":"preview","body":"# Title\\n\\nBody from sample."}}
+{"op":"add","path":"/elements/card","value":{"type":"Card","props":{"title":null,"description":null,"maxWidth":"full","centered":null},"children":["tabs"]}}
+{"op":"add","path":"/elements/tabs","value":{"type":"Tabs","props":{"defaultValue":"preview","value":{"$bindState":"/activeTab"},"tabs":[{"label":"Preview","value":"preview"},{"label":"Edit","value":"edit"}]},"children":["preview","edit"]}}
+{"op":"add","path":"/elements/preview","value":{"type":"MarkdownView","props":{"markdown":{"$bindState":"/body"},"title":null},"children":[]}}
+{"op":"add","path":"/elements/edit","value":{"type":"Textarea","props":{"label":"Markdown","name":"body","placeholder":null,"rows":14,"value":{"$bindState":"/body"},"checks":null,"validateOn":null},"children":[]}}
+{"op":"add","path":"/root","value":"card"}
+`;
 function buildInventPrompt(input) {
   const sample = (input.sampleText ?? "").slice(0, 2400);
   const hex = input.hexPreview.slice(0, 800);
   const detected = detectContentKind(input.filename, input.sampleText);
-  const catalogPrompt = catalog.prompt({
+  const catalogPrompt = inventCatalog.prompt({
     mode: "standalone",
     system: "You invent a small interactive json-render mini-app Spec for an unrecognized dropped file \u2014 not a static dump viewer.",
     customRules: [
-      "Never invent an emulator, CPU, disk controller, ROM runner, or game console. If the file needs one, the host will use BinaryInspector or a registered player instead.",
-      "Never use InventedViewer or BinaryInspector (host wrappers).",
-      "Do not use AudioPlayer, VideoPlayer, PdfViewer, PixelEditor, TrackerPlayer, Spreadsheet, or WebPageViewer unless the file data clearly fits and you inline all required props.",
-      "Put file contents in Spec.state and bind Textarea / MarkdownView / Tabs via $bindState or $state. Every $bindState/$state path MUST appear in the top-level state object with a real initial value from the file sample.",
-      'Example state: {"activeTab":"code","codeExtracted":"...","literateSource":"..."}.',
-      "Build a MINI-APP, not a poster: prefer Tabs (or Accordion) with at least two panes \u2014 e.g. Preview/Code + Edit, or Overview + Raw.",
+      `Only use these components: ${inventCatalog.componentNames.join(", ")}.`,
+      "Never invent an emulator, CPU, disk controller, ROM runner, or game console.",
+      "Never use InventedViewer, BinaryInspector, AudioPlayer, VideoPlayer, PdfViewer, PixelEditor, TrackerPlayer, Spreadsheet, or WebPageViewer.",
+      "Put file contents in Spec.state and bind Textarea / MarkdownView / Tabs via $bindState or $state. Every $bindState/$state path MUST appear in top-level state with a real initial value from the sample.",
+      'Example state: {"activeTab":"text","body":"\u2026","hex":"\u2026"}.',
+      "Build a MINI-APP: Tabs (preferred) or Accordion with \u22652 panes \u2014 e.g. Text|Hex, Preview|Edit, Overview|Raw.",
       "Card is only a border shell (title/description null \u2014 window chrome already shows the name).",
       "Do not invent fake file contents \u2014 copy from the sample (for .lhs Code tab, strip leading '>' bird tracks).",
-      "Use Badge, Alert, Heading, Text, Separator for structure. Buttons are fine for secondary chrome (even if actions are no-ops).",
-      "Typical size: 6\u201314 elements. Avoid a 3-element Card\u2192Markdown\u2192Alert dump.",
-      "Every props field required by the catalog must be present (use null where nullable).",
+      "Use Badge, Alert, Heading, Text, Separator, Metric for structure.",
+      "Typical size: 6\u201314 elements. Forbidden: a 3-element Card\u2192Markdown\u2192Alert poster.",
+      "Every required props field must be present (null where nullable).",
       'Textarea/Input label must be a string (use "" if unlabeled), never null.',
-      'Leaf elements must include "children": [].',
-      "Nullable prop omissions: always include nullable keys with null rather than omitting them."
+      'Leaf elements must include "children": [].'
     ]
   });
   return `${catalogPrompt}
 
 ---
+${FEW_SHOTS}
+---
 
 TASK
-Invent an interactive mini-app Spec for this file. Follow SpecStream JSONL from the catalog prompt.
+Invent an interactive mini-app Spec for this file. Follow SpecStream JSONL from the catalog prompt (same shape as the examples).
 
-Goal: someone who dropped this file should be able to inspect AND work with it (switch views, edit text, see structured highlights) \u2014 not just read a summary card.
+Goal: inspect AND work with the file (switch views, edit text, see highlights) \u2014 not a summary card.
 
 Detected: ${detected.kind} (language=${detected.language})
 App guidance: ${detected.hint}
@@ -271,6 +380,21 @@ ${sample || "(empty \u2014 binary or no decode)"}
 
 Hex preview (use in a Hex tab when useful):
 ${hex || "(empty)"}
+`;
+}
+function buildInventRepairPrompt(options) {
+  return `${options.basePrompt}
+
+---
+
+REPAIR
+Your previous Spec was rejected:
+${options.errors}
+
+Previous output (truncate if needed \u2014 fix the issues, do not explain):
+${options.previousOutput.slice(0, 3500)}
+
+Emit a corrected SpecStream JSONL only. Keep Tabs (\u22652) + Textarea bound to Spec.state with real sample/hex values. No poster Card\u2192Markdown dumps.
 `;
 }
 
@@ -359,15 +483,16 @@ function buildFileCandidates(file) {
       element: { type, props, ...on ? { on } : {} }
     });
   }
+  const fillWindow = file.kind === "webpage" || file.kind === "image" || file.kind === "video" || file.kind === "pdf" || file.kind === "tracker" || file.kind === "csv";
   add(
     "card",
-    "Card: bordered container for the file content only (no title \u2014 the window chrome already shows name/type).",
+    fillWindow ? "Card: full-width border-only shell so the primary viewer fills the floating window (no title \u2014 chrome already shows name/type)." : "Card: bordered container for the file content only (no title \u2014 the window chrome already shows name/type).",
     "Card",
     {
       title: null,
       description: null,
-      maxWidth: "md",
-      centered: true
+      maxWidth: fillWindow ? "full" : "md",
+      centered: fillWindow ? null : true
     },
     "layout:card",
     void 0,
@@ -783,6 +908,30 @@ function fenceAs(language, body) {
   const safe = body.replace(/```/g, "'''");
   return "```" + language + "\n" + safe + "\n```";
 }
+function tryPrettyJson(sample) {
+  const t = sample.trim();
+  if (!(t.startsWith("{") || t.startsWith("["))) return null;
+  try {
+    return JSON.stringify(JSON.parse(t), null, 2);
+  } catch {
+    return null;
+  }
+}
+function topLevelKeys(sample) {
+  const keys = [];
+  for (const m of sample.matchAll(/:([a-zA-Z_][\w-]*)/g)) {
+    const k = m[1];
+    if (k && !keys.includes(k)) keys.push(k);
+    if (keys.length >= 8) break;
+  }
+  if (keys.length) return keys;
+  for (const m of sample.matchAll(/"([^"]{1,40})"\s*:/g)) {
+    const k = m[1];
+    if (k && !keys.includes(k)) keys.push(k);
+    if (keys.length >= 8) break;
+  }
+  return keys;
+}
 function collectStatePaths(value, into) {
   if (Array.isArray(value)) {
     for (const item of value) collectStatePaths(item, into);
@@ -835,21 +984,30 @@ function seedValueForPath(path, input, tabDefault) {
   const sample = input.sampleText ?? "";
   const bird = extractBirdCode(sample);
   const lang = input.filename.includes(".") ? input.filename.split(".").pop() || "text" : "text";
+  const pretty = tryPrettyJson(sample);
   if (/^(active)?tab$/i.test(leaf) || leaf === "selectedtab") return tabDefault;
   if (/hex/i.test(leaf)) return input.hexPreview;
-  if (/extract|bird/i.test(leaf) || leaf.includes("code") && !leaf.includes("source")) {
-    return bird || sample;
+  if (/keys|keywords|fields/i.test(leaf)) {
+    return topLevelKeys(sample).join(", ") || "(none detected)";
   }
-  if (/literate|raw|full|source|content|text|body|edit|markdown|sample|code/i.test(
+  if (/size|bytes/i.test(leaf)) return String(input.size);
+  if (/mime/i.test(leaf)) return input.mimeType;
+  if (/filename|name|title/i.test(leaf) && leaf !== "textarea") {
+    return input.title || input.filename;
+  }
+  if (/extract|bird/i.test(leaf) || leaf.includes("code") && !leaf.includes("source")) {
+    return bird || pretty || sample;
+  }
+  if (/literate|raw|full|source|content|text|body|edit|markdown|sample|code|json/i.test(
     leaf
   )) {
     if (/markdown|preview/i.test(leaf) && sample) {
       return fenceAs(
         lang === "lhs" || lang === "hs" ? "haskell" : lang,
-        sample
+        pretty || sample
       );
     }
-    return sample || input.hexPreview;
+    return pretty || sample || input.hexPreview;
   }
   return sample || tabDefault;
 }
@@ -861,11 +1019,20 @@ function hydrateInventedSpec(spec, input) {
     ...spec.state ?? {}
   };
   const tabDefault = defaultTabValue(spec);
+  if (state.body === void 0 && (input.sampleText ?? "").length > 0) {
+    state.body = tryPrettyJson(input.sampleText) ?? input.sampleText;
+  }
+  if (state.hex === void 0 && input.hexPreview) {
+    state.hex = input.hexPreview;
+  }
+  if (state.activeTab === void 0 || state.activeTab === "") {
+    state.activeTab = tabDefault;
+  }
   for (const path of paths) {
     const existing = getByPointer(state, path);
     const leaf = path.split("/").filter(Boolean).pop()?.toLowerCase() ?? "";
     const forceLhsCode = /\.lhs$/i.test(input.filename) && /code|extract|bird/i.test(leaf);
-    const forceFileContent = /source|code|text|content|raw|literate|markdown|body|edit|sample/i.test(
+    const forceFileContent = /source|code|text|content|raw|literate|markdown|body|edit|sample|json|hex/i.test(
       leaf
     ) && typeof existing === "string" && existing.length === 0;
     if (forceLhsCode || forceFileContent || existing === void 0 || existing === "") {
@@ -881,6 +1048,10 @@ function hydrateInventedSpec(spec, input) {
     if ((el.type === "Textarea" || el.type === "Input") && props.checks === void 0) {
       props.checks = null;
     }
+    if (el.type === "MarkdownView" && typeof props.markdown === "string" && props.markdown.length === 0 && input.sampleText) {
+      const lang = input.filename.split(".").pop() || "text";
+      props.markdown = fenceAs(lang, input.sampleText);
+    }
     elements[key] = {
       ...el,
       props,
@@ -894,21 +1065,162 @@ function hydrateInventedSpec(spec, input) {
   };
 }
 
-// src/invent-viewer.ts
-function fenceMarkdown(language, body) {
-  const safe = body.replace(/```/g, "'''");
-  return "```" + language + "\n" + safe + "\n```";
+// src/invent-quality.ts
+function assessInventedSpecQuality(spec) {
+  const issues = [];
+  const elements = Object.values(spec.elements ?? {});
+  const types = new Set(elements.map((el) => el.type));
+  const n = elements.length;
+  if (n < 4) {
+    issues.push({
+      code: "too_small",
+      message: `Only ${n} elements \u2014 need a mini-app (\u22654), not a poster.`
+    });
+  }
+  const hasTabs = types.has("Tabs");
+  const hasAccordion = types.has("Accordion");
+  const hasTextarea = types.has("Textarea");
+  if (!hasTabs && !hasAccordion) {
+    issues.push({
+      code: "no_panes",
+      message: "Missing Tabs or Accordion \u2014 need at least two panes."
+    });
+  }
+  const interactive = hasTextarea || types.has("Input") || hasTabs || hasAccordion;
+  if (!interactive) {
+    issues.push({
+      code: "not_interactive",
+      message: "No interactive controls (Tabs/Accordion/Textarea/Input)."
+    });
+  }
+  const leafTypes = [...types].filter(
+    (t) => !["Card", "Stack", "Grid", "Separator"].includes(t)
+  );
+  const onlyStatic = leafTypes.length > 0 && leafTypes.every(
+    (t) => ["MarkdownView", "Text", "Alert", "Heading", "Badge", "Metric"].includes(
+      t
+    )
+  );
+  if (onlyStatic && !hasTabs && !hasAccordion && !hasTextarea) {
+    issues.push({
+      code: "poster",
+      message: "Looks like a static dump (Card/Markdown/Text only). Add Tabs + Edit Textarea bound to Spec.state."
+    });
+  }
+  const state = spec.state ?? {};
+  const stateKeys = Object.keys(state);
+  const hasBind = JSON.stringify(spec.elements ?? {}).includes('"$bindState"') || JSON.stringify(spec.elements ?? {}).includes('"$state"');
+  if (!hasBind && stateKeys.length === 0) {
+    issues.push({
+      code: "no_state",
+      message: "No Spec.state and no $bindState/$state \u2014 put file contents in state and bind panes."
+    });
+  }
+  if (hasTabs) {
+    for (const el of elements) {
+      if (el.type !== "Tabs") continue;
+      const tabs = el.props.tabs;
+      if (!Array.isArray(tabs) || tabs.length < 2) {
+        issues.push({
+          code: "tabs_thin",
+          message: "Tabs must list at least two panes."
+        });
+      }
+      const kids = el.children ?? [];
+      if (kids.length < 2) {
+        issues.push({
+          code: "tabs_no_children",
+          message: "Tabs must include \u22652 child element ids (one panel per tab)."
+        });
+      }
+    }
+  }
+  return issues;
 }
-function buildFallbackSpec(input) {
-  const detected = input.filename.includes(".") ? input.filename.split(".").pop() || "txt" : "txt";
-  const sample = input.sampleText?.trim() ?? "";
-  const bodyMarkdown = sample ? fenceMarkdown(detected, sample.slice(0, 6e3)) : `_No text sample_ \u2014 showing hex preview instead.
+function formatQualityIssues(issues) {
+  return issues.map((i) => `${i.code}: ${i.message}`).join("; ");
+}
 
-\`\`\`
-${input.hexPreview.slice(0, 1200)}
-\`\`\``;
+// src/invent-viewer.ts
+function buildFallbackSpec(input) {
+  const sample = input.sampleText?.trim() ?? "";
+  const hasText = sample.length > 0;
+  const body = hasText ? sample.slice(0, 6e3) : "";
+  const hex = input.hexPreview.slice(0, 4e3) || "(no hex preview)";
+  if (hasText) {
+    return {
+      root: "card",
+      state: {
+        activeTab: "text",
+        body,
+        hex
+      },
+      elements: {
+        card: {
+          type: "Card",
+          props: {
+            title: null,
+            description: null,
+            maxWidth: "full",
+            centered: null
+          },
+          children: ["meta", "tabs"]
+        },
+        meta: {
+          type: "Text",
+          props: {
+            text: `${input.filename} \xB7 ${input.mimeType} \xB7 ${input.size} bytes`,
+            variant: "muted"
+          },
+          children: []
+        },
+        tabs: {
+          type: "Tabs",
+          props: {
+            defaultValue: "text",
+            value: { $bindState: "/activeTab" },
+            tabs: [
+              { label: "Text", value: "text" },
+              { label: "Hex", value: "hex" }
+            ]
+          },
+          children: ["paneText", "paneHex"]
+        },
+        paneText: {
+          type: "Textarea",
+          props: {
+            label: "Contents",
+            name: "body",
+            placeholder: null,
+            rows: 12,
+            checks: null,
+            validateOn: null,
+            value: { $bindState: "/body" }
+          },
+          children: []
+        },
+        paneHex: {
+          type: "Textarea",
+          props: {
+            label: "Hex",
+            name: "hex",
+            placeholder: null,
+            rows: 10,
+            checks: null,
+            validateOn: null,
+            value: { $bindState: "/hex" }
+          },
+          children: []
+        }
+      }
+    };
+  }
   return {
     root: "card",
+    state: {
+      activeTab: "hex",
+      hex
+    },
     elements: {
       card: {
         type: "Card",
@@ -918,17 +1230,7 @@ ${input.hexPreview.slice(0, 1200)}
           maxWidth: "full",
           centered: null
         },
-        children: ["stack"]
-      },
-      stack: {
-        type: "Stack",
-        props: {
-          direction: "vertical",
-          gap: "md",
-          align: "stretch",
-          justify: "start"
-        },
-        children: ["meta", "body"]
+        children: ["meta", "tabs"]
       },
       meta: {
         type: "Text",
@@ -938,11 +1240,37 @@ ${input.hexPreview.slice(0, 1200)}
         },
         children: []
       },
-      body: {
-        type: "MarkdownView",
+      tabs: {
+        type: "Tabs",
         props: {
-          markdown: bodyMarkdown,
-          title: null
+          defaultValue: "hex",
+          value: { $bindState: "/activeTab" },
+          tabs: [
+            { label: "Hex", value: "hex" },
+            { label: "Notes", value: "notes" }
+          ]
+        },
+        children: ["paneHex", "paneNotes"]
+      },
+      paneHex: {
+        type: "Textarea",
+        props: {
+          label: "Hex",
+          name: "hex",
+          placeholder: null,
+          rows: 12,
+          checks: null,
+          validateOn: null,
+          value: { $bindState: "/hex" }
+        },
+        children: []
+      },
+      paneNotes: {
+        type: "Alert",
+        props: {
+          title: "Binary / unknown",
+          message: "No decodable text sample \u2014 hex preview only (host fallback).",
+          type: "info"
         },
         children: []
       }
@@ -989,7 +1317,14 @@ function parseInventedSpec(raw) {
 var FORBIDDEN_TYPES = /* @__PURE__ */ new Set([
   "InventedViewer",
   "SandboxedViewer",
-  "BinaryInspector"
+  "BinaryInspector",
+  "AudioPlayer",
+  "VideoPlayer",
+  "PdfViewer",
+  "PixelEditor",
+  "TrackerPlayer",
+  "Spreadsheet",
+  "WebPageViewer"
 ]);
 function isSpecInventPrompt(prompt) {
   if (!prompt?.trim()) return false;
@@ -1003,13 +1338,13 @@ function resolveInventPrompt(input, custom) {
   return buildInventPrompt(input);
 }
 function validateInventedSpec(value) {
-  const result = catalog.validate(value);
+  const result = inventCatalog.validate(value);
   if (!result.success) {
     const issues = result.error?.issues?.slice(0, 5) ?? [];
     const detail = issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ");
     return {
       ok: false,
-      error: detail || result.error?.message || "Spec failed catalog validation"
+      error: detail || result.error?.message || "Spec failed invent catalog validation"
     };
   }
   const spec = result.data;
@@ -1020,8 +1355,44 @@ function validateInventedSpec(value) {
         error: `Forbidden component type: ${el.type}`
       };
     }
+    if (!inventCatalog.componentNames.includes(el.type)) {
+      return {
+        ok: false,
+        error: `Component not in invent catalog: ${el.type}`
+      };
+    }
   }
   return { ok: true, spec };
+}
+function acceptInventedRaw(parsed) {
+  if (!parsed || typeof parsed !== "object") {
+    return { ok: false, error: "Parsed value is not an object" };
+  }
+  const rawState = "state" in parsed ? parsed.state : void 0;
+  const validated = validateInventedSpec(parsed);
+  if (!validated.ok) return validated;
+  const withState = {
+    ...validated.spec,
+    state: {
+      ...typeof rawState === "object" && rawState ? rawState : {},
+      ...validated.spec.state ?? {}
+    }
+  };
+  const quality = assessInventedSpecQuality(withState);
+  if (quality.length > 0) {
+    return { ok: false, error: formatQualityIssues(quality) };
+  }
+  return { ok: true, spec: withState };
+}
+async function callHaiku(prompt, options) {
+  const anthropic = createAnthropic({ apiKey: options.apiKey });
+  const result = await generateText({
+    model: anthropic("claude-haiku-4-5-20251001"),
+    abortSignal: options.signal,
+    maxOutputTokens: 4096,
+    prompt
+  });
+  return result.text;
 }
 async function inventViewerSpec(input, options = {}) {
   const prompt = resolveInventPrompt(input, options.prompt);
@@ -1030,7 +1401,7 @@ async function inventViewerSpec(input, options = {}) {
     const reason = "ANTHROPIC_API_KEY not set \u2014 Haiku unavailable";
     console.warn(`[invent-viewer] ${reason} \u2014 using fallback Spec.`);
     return {
-      spec: buildFallbackSpec(input),
+      spec: hydrateInventedSpec(buildFallbackSpec(input), input),
       source: "fallback",
       prompt,
       reason,
@@ -1038,58 +1409,102 @@ async function inventViewerSpec(input, options = {}) {
     };
   }
   try {
-    const anthropic = createAnthropic({ apiKey });
-    const result = await generateText({
-      model: anthropic("claude-haiku-4-5-20251001"),
-      abortSignal: options.signal,
-      maxOutputTokens: 4096,
-      prompt
+    const firstRaw = await callHaiku(prompt, {
+      signal: options.signal,
+      apiKey
     });
-    const parsed = parseInventedSpec(result.text);
-    if (!parsed) {
-      const reason = "Could not parse Spec/SpecStream from model output";
-      console.warn(`[invent-viewer] ${reason} \u2014 fallback.`);
-      console.warn(
-        "[invent-viewer] raw head:",
-        result.text.slice(0, 240).replace(/\s+/g, " ")
-      );
-      return {
-        spec: buildFallbackSpec(input),
-        source: "fallback",
-        prompt,
-        reason
-      };
-    }
-    const rawState = parsed && typeof parsed === "object" && "state" in parsed && parsed.state;
-    const validated = validateInventedSpec(parsed);
-    if (!validated.ok) {
-      const reason = `Invalid Spec: ${validated.error}`;
-      console.warn(`[invent-viewer] ${reason} \u2014 fallback.`);
-      return {
-        spec: buildFallbackSpec(input),
-        source: "fallback",
-        prompt,
-        reason
-      };
-    }
-    const withState = {
-      ...validated.spec,
-      state: {
-        ...typeof rawState === "object" && rawState ? rawState : {},
-        ...validated.spec.state ?? {}
+    const firstParsed = parseInventedSpec(firstRaw);
+    if (firstParsed) {
+      const accepted = acceptInventedRaw(firstParsed);
+      if (accepted.ok) {
+        return {
+          spec: hydrateInventedSpec(accepted.spec, input),
+          source: "haiku",
+          prompt
+        };
       }
-    };
+      console.warn(
+        `[invent-viewer] first pass rejected \u2014 ${accepted.error}; attempting repair.`
+      );
+      const repairPrompt2 = buildInventRepairPrompt({
+        basePrompt: prompt,
+        previousOutput: firstRaw,
+        errors: accepted.error
+      });
+      const repairRaw2 = await callHaiku(repairPrompt2, {
+        signal: options.signal,
+        apiKey
+      });
+      const repairParsed2 = parseInventedSpec(repairRaw2);
+      if (repairParsed2) {
+        const repaired = acceptInventedRaw(repairParsed2);
+        if (repaired.ok) {
+          console.warn("[invent-viewer] repair succeeded.");
+          return {
+            spec: hydrateInventedSpec(repaired.spec, input),
+            source: "haiku",
+            prompt,
+            repaired: true
+          };
+        }
+        console.warn(
+          `[invent-viewer] repair still invalid \u2014 ${repaired.error} \u2014 fallback.`
+        );
+        return {
+          spec: hydrateInventedSpec(buildFallbackSpec(input), input),
+          source: "fallback",
+          prompt,
+          reason: `Invalid Spec after repair: ${repaired.error}`
+        };
+      }
+      console.warn("[invent-viewer] repair could not parse Spec \u2014 fallback.");
+      return {
+        spec: hydrateInventedSpec(buildFallbackSpec(input), input),
+        source: "fallback",
+        prompt,
+        reason: "Could not parse Spec after repair"
+      };
+    }
+    console.warn(
+      "[invent-viewer] could not parse first output \u2014 attempting repair."
+    );
+    console.warn(
+      "[invent-viewer] raw head:",
+      firstRaw.slice(0, 240).replace(/\s+/g, " ")
+    );
+    const repairPrompt = buildInventRepairPrompt({
+      basePrompt: prompt,
+      previousOutput: firstRaw,
+      errors: "Could not parse Spec/SpecStream from model output"
+    });
+    const repairRaw = await callHaiku(repairPrompt, {
+      signal: options.signal,
+      apiKey
+    });
+    const repairParsed = parseInventedSpec(repairRaw);
+    if (repairParsed) {
+      const repaired = acceptInventedRaw(repairParsed);
+      if (repaired.ok) {
+        return {
+          spec: hydrateInventedSpec(repaired.spec, input),
+          source: "haiku",
+          prompt,
+          repaired: true
+        };
+      }
+    }
     return {
-      spec: hydrateInventedSpec(withState, input),
-      source: "haiku",
-      prompt
+      spec: hydrateInventedSpec(buildFallbackSpec(input), input),
+      source: "fallback",
+      prompt,
+      reason: "Could not parse Spec/SpecStream from model output"
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const reason = `Haiku request failed: ${message}`;
     console.warn(`[invent-viewer] ${reason}`);
     return {
-      spec: buildFallbackSpec(input),
+      spec: hydrateInventedSpec(buildFallbackSpec(input), input),
       source: "fallback",
       prompt,
       reason,
@@ -1298,7 +1713,9 @@ async function routeUnknownFile(input, options = {}) {
 }
 
 // src/compose-fallback.ts
-function cardWith(childId, child, state, extras) {
+function cardWith(childId, child, state, extras, layout = {}) {
+  const maxWidth = layout.maxWidth ?? "md";
+  const centered = layout.centered === void 0 ? true : layout.centered;
   return {
     root: "card",
     state,
@@ -1308,8 +1725,8 @@ function cardWith(childId, child, state, extras) {
         props: {
           title: null,
           description: null,
-          maxWidth: "md",
-          centered: true
+          maxWidth,
+          centered
         },
         children: extras ? [childId, ...Object.keys(extras)] : [childId]
       },
@@ -1388,7 +1805,8 @@ function buildFallbackComposeSpec(file, reason) {
           children: []
         },
         state,
-        { note: alertNote("note", note) }
+        { note: alertNote("note", note) },
+        { maxWidth: "full", centered: null }
       );
     case "tracker":
       return cardWith(
@@ -1448,7 +1866,9 @@ function buildFallbackComposeSpec(file, reason) {
           children: []
         },
         state,
-        { note: alertNote("note", note) }
+        { note: alertNote("note", note) },
+        // Fill the floating window — md/centered leaves a tiny preview on tall Shorts frames
+        { maxWidth: "full", centered: null }
       );
     case "text":
       return cardWith(
@@ -1856,7 +2276,11 @@ async function enforceMemoryLimit(kv, bucket, clientKey, config) {
   return { allowed: true };
 }
 async function enforceRateLimit(bucket, clientKey, config = RATE_LIMITS[bucket]) {
-  if (hasUpstash()) {
+  if (process.env.FILELATHE_DISABLE_RATE_LIMIT === "1") {
+    return { allowed: true };
+  }
+  const onVercel = Boolean(process.env.VERCEL);
+  if (hasUpstash() && onVercel) {
     const result = await upstashLimiter(bucket).limit(`${bucket}:${clientKey}`);
     if (!result.success) {
       const retryAfter = Math.max(

@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { ChiptuneJsPlayer } from "chiptune3";
 import { getModule } from "./module-store";
+import {
+  getSharedTrackerContext,
+  resumeTrackerContext,
+} from "./tracker-audio";
 
 type Meta = {
   title?: string;
@@ -12,6 +16,13 @@ type Meta = {
   dur?: number;
 };
 
+type PlayerHandle = ChiptuneJsPlayer & {
+  gain?: GainNode;
+  processNode?: AudioWorkletNode;
+};
+
+const WORKLET_TIMEOUT_MS = 6_000;
+
 export function TrackerPlayer({
   props,
 }: {
@@ -22,7 +33,7 @@ export function TrackerPlayer({
     channels: number | null;
   };
 }) {
-  const playerRef = useRef<ChiptuneJsPlayer | null>(null);
+  const playerRef = useRef<PlayerHandle | null>(null);
   const startedRef = useRef(false);
   const [ready, setReady] = useState(false);
   const [playing, setPlaying] = useState(false);
@@ -30,21 +41,63 @@ export function TrackerPlayer({
   const [meta, setMeta] = useState<Meta | null>(null);
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [bootId, setBootId] = useState(0);
 
   useEffect(() => {
     const buffer = getModule(props.moduleId);
     if (!buffer) {
-      setError("Module data missing from browser store.");
+      setReady(false);
+      setError(
+        "Module bytes are missing from this browser tab. Close this window and drop the file again.",
+      );
       return;
     }
 
     let cancelled = false;
+    let initialized = false;
     startedRef.current = false;
-    const player = new ChiptuneJsPlayer({ repeatCount: 0 });
+    setReady(false);
+    setError(null);
+    setPlaying(false);
+    setMeta(null);
+    setPosition(0);
+    setDuration(0);
+
+    const ctx = getSharedTrackerContext();
+    // Pass shared context so React Strict Mode remounts don't abort addModule
+    // by closing a per-instance AudioContext.
+    const player = new ChiptuneJsPlayer({
+      repeatCount: 0,
+      context: ctx,
+    }) as PlayerHandle;
     playerRef.current = player;
 
+    const failTimer = window.setTimeout(() => {
+      if (cancelled || initialized) return;
+      setError(
+        "libopenmpt audio worklet failed to load. Click Retry, or reload the page.",
+      );
+    }, WORKLET_TIMEOUT_MS);
+
     player.onInitialized(() => {
-      if (cancelled) return;
+      if (cancelled) {
+        try {
+          player.gain?.disconnect();
+          player.processNode?.disconnect();
+        } catch {
+          // ignore
+        }
+        return;
+      }
+      initialized = true;
+      window.clearTimeout(failTimer);
+      // External context → chiptune3 does not auto-connect to speakers
+      try {
+        player.gain?.connect(ctx.destination);
+      } catch {
+        // already connected
+      }
+      setError(null);
       setReady(true);
       player.setRepeatCount(0);
     });
@@ -68,32 +121,43 @@ export function TrackerPlayer({
 
     return () => {
       cancelled = true;
+      window.clearTimeout(failTimer);
+      playerRef.current = null;
       try {
         player.stop();
-        void player.context.close();
+        player.gain?.disconnect();
+        player.processNode?.disconnect();
       } catch {
-        // ignore
+        // ignore — never close the shared AudioContext
       }
-      playerRef.current = null;
     };
-  }, [props.moduleId]);
+  }, [props.moduleId, bootId]);
 
   async function toggle() {
     const player = playerRef.current;
     const buffer = getModule(props.moduleId);
-    if (!player || !ready || !buffer) return;
-    setError(null);
-    if (player.context.state === "suspended") {
-      await player.context.resume();
-    }
-    if (!startedRef.current) {
-      player.play(buffer.slice(0));
-      startedRef.current = true;
-      setPlaying(true);
+    if (!buffer) {
+      setError("Module bytes are missing. Close this window and drop the file again.");
       return;
     }
-    player.togglePause();
-    setPlaying((value) => !value);
+    if (!player || !ready) {
+      setError("Player is not ready yet. Wait a moment or click Retry.");
+      return;
+    }
+    setError(null);
+    try {
+      await resumeTrackerContext();
+      if (!startedRef.current) {
+        player.play(buffer.slice(0));
+        startedRef.current = true;
+        setPlaying(true);
+        return;
+      }
+      player.togglePause();
+      setPlaying((value) => !value);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
   }
 
   function stop() {
@@ -138,6 +202,15 @@ export function TrackerPlayer({
         >
           Stop
         </button>
+        {error ? (
+          <button
+            type="button"
+            className="rounded-full border px-3 py-1 text-xs"
+            onClick={() => setBootId((n) => n + 1)}
+          >
+            Retry
+          </button>
+        ) : null}
       </div>
       <div className="text-xs text-muted-foreground">
         {formatTime(position)}

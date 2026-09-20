@@ -111,14 +111,22 @@ async function enforceMemoryLimit(
 
 /**
  * Enforce a sliding-window limit for the given API bucket.
- * Uses Upstash on Vercel when env is set; otherwise in-memory (local only).
+ * Upstash on Vercel when configured; in-memory for local (so .env Upstash
+ * keys don't share / burn production quotas while developing).
  */
 export async function enforceRateLimit(
   bucket: RateLimitBucket,
   clientKey: string,
   config: RateLimitConfig = RATE_LIMITS[bucket],
 ): Promise<RateLimitResult> {
-  if (hasUpstash()) {
+  if (process.env.FILELATHE_DISABLE_RATE_LIMIT === "1") {
+    return { allowed: true };
+  }
+
+  // Local `pnpm dev` often has UPSTASH_* in .env for deploy parity — don't
+  // charge that shared Redis budget from every localhost compose/invent call.
+  const onVercel = Boolean(process.env.VERCEL);
+  if (hasUpstash() && onVercel) {
     const result = await upstashLimiter(bucket).limit(`${bucket}:${clientKey}`);
     if (!result.success) {
       const retryAfter = Math.max(

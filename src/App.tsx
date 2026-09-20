@@ -106,6 +106,7 @@ export function App() {
     "Drop a file or paste a URL — a new window opens for each one.",
   );
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
   const [dragOver, setDragOver] = useState(false);
   const [urlDraft, setUrlDraft] = useState("");
   const [specsRefresh, setSpecsRefresh] = useState(0);
@@ -115,13 +116,21 @@ export function App() {
   const zTopRef = useRef(zTop);
   zTopRef.current = zTop;
 
+  function setBusyFlag(next: boolean) {
+    busyRef.current = next;
+    setBusy(next);
+  }
+
   function toastApiFailure(error: unknown) {
     const msg = toastMessageForApiError(error);
     toast({
       title: msg.title,
       description: msg.description,
       variant: msg.variant,
-      durationMs: msg.variant === "error" ? 10_000 : 7000,
+      durationMs:
+        msg.title.toLowerCase().includes("rate") || msg.variant === "error"
+          ? 12_000
+          : 7000,
     });
   }
 
@@ -132,17 +141,53 @@ export function App() {
         const snap = await loadSession();
         if (cancelled) return;
         if (snap?.windows.length) {
-          const revived = snap.windows.map(reviveWindow);
-          setWindows(revived);
+          const revived = snap.windows.map((w) => {
+            const live = reviveWindow(w);
+            // Never restore maximized — it covers Choose file / drop zone
+            if (live.maximized) {
+              return {
+                ...live,
+                maximized: false,
+                ...(live.restore
+                  ? {
+                      x: live.restore.x,
+                      y: live.restore.y,
+                      width: live.restore.width,
+                      height: live.restore.height,
+                      restore: null,
+                    }
+                  : {}),
+              };
+            }
+            return live;
+          });
+          const usable = revived.filter((w) => {
+            if (w.file.kind !== "tracker") return true;
+            return getModule(w.file.moduleId) != null;
+          });
+          const dropped = revived.length - usable.length;
+          setWindows(usable);
           setActiveId(
-            snap.activeId && revived.some((w) => w.id === snap.activeId)
+            snap.activeId && usable.some((w) => w.id === snap.activeId)
               ? snap.activeId
-              : (revived.at(-1)?.id ?? null),
+              : (usable.at(-1)?.id ?? null),
           );
-          setZTop(Math.max(snap.zTop, ...revived.map((w) => w.z), 10));
-          setStatus(
-            `Restored ${revived.length} window${revived.length === 1 ? "" : "s"} from this browser.`,
+          setZTop(
+            usable.length
+              ? Math.max(snap.zTop, ...usable.map((w) => w.z), 10)
+              : snap.zTop,
           );
+          if (usable.length) {
+            setStatus(
+              `Restored ${usable.length} window${usable.length === 1 ? "" : "s"} from this browser${
+                dropped ? ` (${dropped} tracker${dropped === 1 ? "" : "s"} needed a re-drop)` : ""
+              }.`,
+            );
+          } else if (dropped) {
+            setStatus(
+              "Saved tracker windows need a re-drop — module bytes were missing from the session.",
+            );
+          }
         }
       } catch (error) {
         console.warn("[session] restore failed:", error);
@@ -457,6 +502,7 @@ export function App() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ file: toCompose }),
+      signal: AbortSignal.timeout(120_000),
     });
     if (!response.ok) throw await readApiError(response);
     const data = (await response.json()) as ComposeResponse;
@@ -539,9 +585,18 @@ export function App() {
   }
 
   async function openFromFile(raw: File | undefined) {
-    if (!raw || busy) return;
-    setBusy(true);
-    setStatus("Detecting file and composing…");
+    if (!raw) return; // picker cancel — stay quiet
+    if (busyRef.current) {
+      toast({
+        title: "Still working",
+        description: "Wait for the current file to finish before opening another.",
+        variant: "warning",
+        durationMs: 4000,
+      });
+      return;
+    }
+    setBusyFlag(true);
+    setStatus(`Opening ${raw.name}…`);
     try {
       const file = await loadDroppedFile(raw);
       await composeAndOpen(file);
@@ -549,19 +604,29 @@ export function App() {
       toastApiFailure(error);
       setStatus(error instanceof Error ? error.message : String(error));
     } finally {
-      setBusy(false);
+      setBusyFlag(false);
     }
   }
 
   async function openFromUrl(rawUrl: string) {
-    if (!rawUrl.trim() || busy) return;
-    setBusy(true);
+    if (!rawUrl.trim()) return;
+    if (busyRef.current) {
+      toast({
+        title: "Still working",
+        description: "Wait for the current file to finish before opening another.",
+        variant: "warning",
+        durationMs: 4000,
+      });
+      return;
+    }
+    setBusyFlag(true);
     setStatus("Fetching URL…");
     try {
       const response = await fetch("/api/fetch-resource", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: rawUrl.trim() }),
+        signal: AbortSignal.timeout(60_000),
       });
       if (!response.ok) throw await readApiError(response);
       const data = (await response.json()) as FetchedResource;
@@ -577,22 +642,87 @@ export function App() {
       toastApiFailure(error);
       setStatus(error instanceof Error ? error.message : String(error));
     } finally {
-      setBusy(false);
+      setBusyFlag(false);
     }
   }
 
-  function handleDrop(event: React.DragEvent<HTMLDivElement>) {
-    event.preventDefault();
-    setDragOver(false);
-    const uri =
-      event.dataTransfer.getData("text/uri-list") ||
-      event.dataTransfer.getData("text/plain");
-    if (uri && isProbablyUrl(uri.split("\n")[0] ?? "")) {
-      void openFromUrl((uri.split("\n")[0] ?? "").trim());
+  function fileFromDataTransfer(dt: DataTransfer | null): File | null {
+    if (!dt) return null;
+    if (dt.files?.length) return dt.files.item(0);
+    for (const item of Array.from(dt.items ?? [])) {
+      if (item.kind === "file") {
+        const file = item.getAsFile();
+        if (file) return file;
+      }
+    }
+    return null;
+  }
+
+  const acceptDroppedPayloadRef = useRef<(dt: DataTransfer | null) => void>(
+    () => undefined,
+  );
+  acceptDroppedPayloadRef.current = (dt: DataTransfer | null) => {
+    const file = fileFromDataTransfer(dt);
+    if (file) {
+      void openFromFile(file);
       return;
     }
-    void openFromFile(event.dataTransfer.files?.[0]);
-  }
+    const uri =
+      dt?.getData("text/uri-list") || dt?.getData("text/plain") || "";
+    const firstLine = uri.split("\n")[0]?.trim() ?? "";
+    if (firstLine && isProbablyUrl(firstLine)) {
+      void openFromUrl(firstLine);
+      return;
+    }
+    // Finder Recents / smart folders often advertise Files but leave FileList empty.
+    const claimedFiles = Array.from(dt?.types ?? []).some(
+      (t) => t === "Files" || t === "application/x-moz-file",
+    );
+    toast({
+      title: "Couldn't read that drop",
+      description: claimedFiles
+        ? "Finder Recents drops often arrive empty in the browser. Open the file from its real folder (Downloads / Documents), or use Choose file… from that folder."
+        : "Try Choose file…, or drop a real file (not a Finder alias / Recents stub).",
+      variant: "warning",
+      durationMs: 8000,
+    });
+  };
+
+  const dropZoneRef = useRef<HTMLDivElement>(null);
+
+  // Native listeners — React synthetic DragEvents sometimes see an empty FileList
+  // for Finder drops on Chromium/macOS.
+  useEffect(() => {
+    const el = dropZoneRef.current;
+    if (!el) return;
+
+    const onDragOver = (event: DragEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+      setDragOver(true);
+    };
+    const onDragLeave = (event: DragEvent) => {
+      if (event.target === el) setDragOver(false);
+    };
+    const onDrop = (event: DragEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setDragOver(false);
+      acceptDroppedPayloadRef.current(event.dataTransfer);
+    };
+
+    el.addEventListener("dragenter", onDragOver);
+    el.addEventListener("dragover", onDragOver);
+    el.addEventListener("dragleave", onDragLeave);
+    el.addEventListener("drop", onDrop);
+    return () => {
+      el.removeEventListener("dragenter", onDragOver);
+      el.removeEventListener("dragover", onDragOver);
+      el.removeEventListener("dragleave", onDragLeave);
+      el.removeEventListener("drop", onDrop);
+    };
+  }, []);
 
   return (
     <div className="relative min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top_left,oklch(0.96_0.02_95),transparent_45%),linear-gradient(180deg,oklch(0.99_0.005_95),oklch(0.95_0.01_95))]">
@@ -615,72 +745,98 @@ export function App() {
           </p>
         </header>
 
-        <div
-          className={`rounded-2xl border-2 border-dashed px-6 py-8 text-center transition-colors ${
-            dragOver
-              ? "border-primary bg-primary/5"
-              : "border-border bg-card/70"
-          } ${busy ? "opacity-70" : ""}`}
-          onDragOver={(event) => {
-            event.preventDefault();
-            setDragOver(true);
-          }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={handleDrop}
-        >
-          <p className="text-lg font-medium">
-            {busy ? "Working…" : "Drop a file or URL"}
-          </p>
-          {busy ? (
-            <div className="mt-4 flex justify-center">
-              <InventingAnimation
-                label={
-                  status.toLowerCase().includes("invent")
-                    ? "Haiku is inventing a mini-app…"
-                    : "Composing UI…"
-                }
-              />
-            </div>
-          ) : (
-            <p className="mt-2 text-sm text-muted-foreground">
-              media · docs · data · anything else (invent mini-app) · https://…
+        {/* Only the open strip sits above windows (z-20). A full-column z-30
+            overlay blocked Play and other window clicks. */}
+        <div className="relative z-40 space-y-3">
+          <div
+            ref={dropZoneRef}
+            className={`rounded-2xl border-2 border-dashed px-6 py-8 text-center transition-colors ${
+              dragOver
+                ? "border-primary bg-primary/5"
+                : "border-border bg-card/70"
+            } ${busy ? "opacity-70" : ""}`}
+          >
+            <p className="text-lg font-medium">
+              {busy ? "Working…" : "Drop a file or URL"}
             </p>
-          )}
-          <label className="mt-4 inline-flex cursor-pointer rounded-full bg-primary px-5 py-2 text-sm text-primary-foreground">
-            Choose file…
+            {busy ? (
+              <div className="mt-4 flex flex-col items-center gap-3">
+                <InventingAnimation
+                  label={
+                    status.toLowerCase().includes("invent")
+                      ? "Haiku is inventing a mini-app…"
+                      : "Composing UI…"
+                  }
+                />
+                <button
+                  type="button"
+                  className="rounded-full border px-4 py-1.5 text-xs"
+                  onClick={() => {
+                    setBusyFlag(false);
+                    setStatus("Cancelled.");
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <p className="mt-2 text-sm text-muted-foreground">
+                media · docs · data · anything else (invent mini-app) · https://…
+              </p>
+            )}
+            <form
+              className="mx-auto mt-4 flex max-w-lg gap-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void openFromUrl(urlDraft);
+              }}
+            >
+              <input
+                type="url"
+                value={urlDraft}
+                disabled={busy}
+                placeholder="https://example.com/file.json"
+                className="min-w-0 flex-1 rounded-full border bg-background px-4 py-2 text-sm"
+                onChange={(event) => setUrlDraft(event.target.value)}
+              />
+              <button
+                type="submit"
+                disabled={busy || !urlDraft.trim()}
+                className="rounded-full border px-4 py-2 text-sm disabled:opacity-50"
+              >
+                Open URL
+              </button>
+            </form>
+          </div>
+
+          {/* Outside drop zone so Finder drops aren't eaten by <input type=file>. */}
+          <div className="flex justify-center gap-3">
+            <label
+              htmlFor="filelathe-file-input"
+              className="inline-flex cursor-pointer rounded-full bg-primary px-5 py-2 text-sm text-primary-foreground"
+            >
+              Choose file…
+            </label>
             <input
+              id="filelathe-file-input"
               type="file"
-              className="hidden"
-              disabled={busy}
+              className="absolute h-px w-px overflow-hidden opacity-0"
               onChange={(event) => {
-                void openFromFile(event.target.files?.[0]);
+                const next = event.target.files?.[0];
                 event.target.value = "";
+                if (!next) {
+                  toast({
+                    title: "No file selected",
+                    description: "The file dialog closed without a file.",
+                    variant: "warning",
+                    durationMs: 4000,
+                  });
+                  return;
+                }
+                void openFromFile(next);
               }}
             />
-          </label>
-          <form
-            className="mx-auto mt-4 flex max-w-lg gap-2"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void openFromUrl(urlDraft);
-            }}
-          >
-            <input
-              type="url"
-              value={urlDraft}
-              disabled={busy}
-              placeholder="https://example.com/file.json"
-              className="min-w-0 flex-1 rounded-full border bg-background px-4 py-2 text-sm"
-              onChange={(event) => setUrlDraft(event.target.value)}
-            />
-            <button
-              type="submit"
-              disabled={busy || !urlDraft.trim()}
-              className="rounded-full border px-4 py-2 text-sm disabled:opacity-50"
-            >
-              Open URL
-            </button>
-          </form>
+          </div>
         </div>
 
         <p className="text-sm text-muted-foreground">{status}</p>

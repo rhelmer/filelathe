@@ -129,17 +129,45 @@ async function waitForWindow(page, timeout = 120_000) {
 
 async function uploadFile(page, filePath) {
   const input = page.locator('input[type="file"]').first();
+  await input.waitFor({ state: "attached", timeout: 30_000 });
+  // Disabled while busy — setInputFiles won't fire onChange on a disabled input
+  await page.waitForFunction(() => {
+    const el = document.querySelector('input[type="file"]');
+    return el instanceof HTMLInputElement && !el.disabled;
+  }, { timeout: 90_000 });
   await input.setInputFiles(filePath);
 }
 
 async function openUrl(page, url) {
-  const field = page.locator('input[type="url"]').first();
-  await field.waitFor({ state: "visible", timeout: 30_000 });
   // Floating windows can cover the form on tall/portrait viewports
   await minimizeAllWindows(page);
+  await page.waitForTimeout(400);
+
+  // Wait out any in-flight compose so openFromUrl doesn't no-op on busy
+  await page
+    .waitForFunction(() => {
+      const busyLabel = document.body.innerText.includes("Working…");
+      return !busyLabel;
+    }, { timeout: 60_000 })
+    .catch(() => undefined);
+
+  const field = page.locator('input[type="url"]').first();
+  await field.waitFor({ state: "visible", timeout: 30_000 });
   await field.click({ force: true });
   await field.fill(url);
-  await page.getByRole("button", { name: /^Open URL$/i }).click({ force: true });
+  // React controlled input — ensure state matches before submit
+  await field.evaluate((el, value) => {
+    const input = el;
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    setter?.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  }, url);
+  await page.waitForTimeout(150);
+  await field.press("Enter");
 }
 
 async function clickTrackerPlay(page) {
@@ -393,7 +421,7 @@ async function clickInventedTabs(page) {
 
   const inventWin = page
     .locator("[data-filelathe-window]")
-    .filter({ hasText: /orbit-config|\.edn/i })
+    .filter({ hasText: /orbit[\s-]?config|\.edn/i })
     .first();
   await inventWin.waitFor({ state: "visible", timeout: 30_000 });
 
@@ -503,11 +531,32 @@ async function minimizeAllWindows(page) {
   }
 }
 
+async function closeAllWindows(page) {
+  for (let pass = 0; pass < 12; pass++) {
+    const restore = page.getByRole("button", { name: /^Restore$/i }).first();
+    if ((await restore.count()) > 0) {
+      await restore.click({ force: true }).catch(() => undefined);
+      await page.waitForTimeout(150);
+    }
+    const btn = page.getByRole("button", { name: /^Close$/i }).first();
+    if ((await btn.count()) === 0) break;
+    await btn.click({ force: true }).catch(() => undefined);
+    await page.waitForTimeout(250);
+  }
+}
+
 async function runDemoScene(page, videoEpochMs, cfg = {}) {
   await page.goto(siteUrl + "/", { waitUntil: "domcontentloaded", timeout: 60_000 });
   await page
     .getByRole("heading", { name: /^Filelathe$/i })
     .waitFor({ state: "visible", timeout: 60_000 });
+
+  if (cfg.portrait) {
+    // Scale UI up so Shorts stay readable after 1080×1920 upscale
+    await page.evaluate(() => {
+      document.documentElement.style.zoom = "1.25";
+    });
+  }
 
   // First painted frame — trim blank about:blank / pre-paint from the recording
   const leadTrimMs = Date.now() - videoEpochMs;
@@ -530,7 +579,7 @@ async function runDemoScene(page, videoEpochMs, cfg = {}) {
     .first()
     .waitFor({ state: "visible", timeout: 120_000 });
   await drawOnPixelEditor(page);
-  await minimizeAllWindows(page);
+  await closeAllWindows(page);
   await page.waitForTimeout(400);
 
   // 3) Web page — open rhelmer.org and browse to Projects
@@ -540,23 +589,18 @@ async function runDemoScene(page, videoEpochMs, cfg = {}) {
     .first()
     .waitFor({ state: "visible", timeout: 120_000 });
   await browseRhelmerProjects(page);
-  await minimizeAllWindows(page);
+  await closeAllWindows(page);
   await page.waitForTimeout(400);
 
   // 4) Invent UI for an unknown format
-  const inventBefore = await page
-    .locator("[data-filelathe-window]")
-    .filter({ hasText: /orbit-config|\.edn/i })
-    .count();
+  console.log("  uploading invent fixture…");
   await uploadFile(page, ednPath);
   await page
     .locator("[data-filelathe-window]")
-    .filter({ hasText: /orbit-config|\.edn/i })
-    .nth(inventBefore)
-    .waitFor({ state: "visible", timeout: 180_000 })
-    .catch(async () => {
-      await waitForWindowCount(page, inventBefore + 1, 180_000);
-    });
+    .filter({ hasText: /orbit[\s-]?config|\.edn/i })
+    .last()
+    .waitFor({ state: "visible", timeout: 180_000 });
+  console.log("  invent window open");
   await page.waitForTimeout(2800);
   await clickInventedTabs(page);
 
