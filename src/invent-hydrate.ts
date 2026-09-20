@@ -14,6 +14,34 @@ function fenceAs(language: string, body: string): string {
   return "```" + language + "\n" + safe + "\n```";
 }
 
+function tryPrettyJson(sample: string): string | null {
+  const t = sample.trim();
+  if (!(t.startsWith("{") || t.startsWith("["))) return null;
+  try {
+    return JSON.stringify(JSON.parse(t), null, 2);
+  } catch {
+    return null;
+  }
+}
+
+function topLevelKeys(sample: string): string[] {
+  const keys: string[] = [];
+  // EDN-ish :keyword
+  for (const m of sample.matchAll(/:([a-zA-Z_][\w-]*)/g)) {
+    const k = m[1];
+    if (k && !keys.includes(k)) keys.push(k);
+    if (keys.length >= 8) break;
+  }
+  if (keys.length) return keys;
+  // JSON "key":
+  for (const m of sample.matchAll(/"([^"]{1,40})"\s*:/g)) {
+    const k = m[1];
+    if (k && !keys.includes(k)) keys.push(k);
+    if (keys.length >= 8) break;
+  }
+  return keys;
+}
+
 function collectStatePaths(value: unknown, into: Set<string>): void {
   if (Array.isArray(value)) {
     for (const item of value) collectStatePaths(item, into);
@@ -87,27 +115,36 @@ function seedValueForPath(
   const lang = input.filename.includes(".")
     ? input.filename.split(".").pop() || "text"
     : "text";
+  const pretty = tryPrettyJson(sample);
 
   if (/^(active)?tab$/i.test(leaf) || leaf === "selectedtab") return tabDefault;
   if (/hex/i.test(leaf)) return input.hexPreview;
+  if (/keys|keywords|fields/i.test(leaf)) {
+    return topLevelKeys(sample).join(", ") || "(none detected)";
+  }
+  if (/size|bytes/i.test(leaf)) return String(input.size);
+  if (/mime/i.test(leaf)) return input.mimeType;
+  if (/filename|name|title/i.test(leaf) && leaf !== "textarea") {
+    return input.title || input.filename;
+  }
   if (
     /extract|bird/i.test(leaf) ||
     (leaf.includes("code") && !leaf.includes("source"))
   ) {
-    return bird || sample;
+    return bird || pretty || sample;
   }
   if (
-    /literate|raw|full|source|content|text|body|edit|markdown|sample|code/i.test(
+    /literate|raw|full|source|content|text|body|edit|markdown|sample|code|json/i.test(
       leaf,
     )
   ) {
     if (/markdown|preview/i.test(leaf) && sample) {
       return fenceAs(
         lang === "lhs" || lang === "hs" ? "haskell" : lang,
-        sample,
+        pretty || sample,
       );
     }
-    return sample || input.hexPreview;
+    return pretty || sample || input.hexPreview;
   }
   return sample || tabDefault;
 }
@@ -126,13 +163,24 @@ export function hydrateInventedSpec(spec: Spec, input: InventInput): Spec {
   };
   const tabDefault = defaultTabValue(spec);
 
+  // Always offer common seeds even if Haiku forgot to bind them
+  if (state.body === undefined && (input.sampleText ?? "").length > 0) {
+    state.body = tryPrettyJson(input.sampleText!) ?? input.sampleText;
+  }
+  if (state.hex === undefined && input.hexPreview) {
+    state.hex = input.hexPreview;
+  }
+  if (state.activeTab === undefined || state.activeTab === "") {
+    state.activeTab = tabDefault;
+  }
+
   for (const path of paths) {
     const existing = getByPointer(state, path);
     const leaf = path.split("/").filter(Boolean).pop()?.toLowerCase() ?? "";
     const forceLhsCode =
       /\.lhs$/i.test(input.filename) && /code|extract|bird/i.test(leaf);
     const forceFileContent =
-      /source|code|text|content|raw|literate|markdown|body|edit|sample/i.test(
+      /source|code|text|content|raw|literate|markdown|body|edit|sample|json|hex/i.test(
         leaf,
       ) &&
       typeof existing === "string" &&
@@ -161,6 +209,16 @@ export function hydrateInventedSpec(spec: Spec, input: InventInput): Spec {
       props.checks === undefined
     ) {
       props.checks = null;
+    }
+    // Inline Markdown/Text that still holds empty string — seed from sample
+    if (
+      el.type === "MarkdownView" &&
+      typeof props.markdown === "string" &&
+      props.markdown.length === 0 &&
+      input.sampleText
+    ) {
+      const lang = input.filename.split(".").pop() || "text";
+      props.markdown = fenceAs(lang, input.sampleText);
     }
     elements[key] = {
       ...el,

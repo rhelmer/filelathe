@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "list-candidates": "tsx src/list.ts",
     "file-smoke": "tsx --env-file=.env src/file-smoke.ts",
+    "invent-smoke": "tsx src/invent-smoke.ts",
     "check-types": "tsc --noEmit",
     "demo:capture": "node scripts/social-media/capture-filelathe-demo.mjs"
   },

@@ -1,9 +1,17 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { compileSpecStream, type Spec } from "@json-render/core";
 import { generateText } from "ai";
-import { catalog } from "./catalog";
+import { inventCatalog } from "./invent-catalog";
 import { hydrateInventedSpec } from "./invent-hydrate";
-import { buildInventPrompt, type InventInput } from "./invent-prompt";
+import {
+  assessInventedSpecQuality,
+  formatQualityIssues,
+} from "./invent-quality";
+import {
+  buildInventPrompt,
+  buildInventRepairPrompt,
+  type InventInput,
+} from "./invent-prompt";
 
 export type { InventInput };
 export { buildInventPrompt };
@@ -18,25 +26,95 @@ export type InventViewerResult = {
   reason?: string;
   /** True when Haiku could not be used (missing key or API failure). */
   modelUnavailable?: boolean;
+  /** Set when a repair pass recovered a Spec. */
+  repaired?: boolean;
 };
 
-function fenceMarkdown(language: string, body: string): string {
-  const safe = body.replace(/```/g, "'''");
-  return "```" + language + "\n" + safe + "\n```";
-}
-
-/** Deterministic Spec when Haiku is unavailable or returns invalid JSON. */
+/**
+ * Deterministic mini-app when Haiku is unavailable or still invalid after repair.
+ * Uses Tabs Text|Hex (or Hex|Notes for binary) — not a poster dump.
+ */
 export function buildFallbackSpec(input: InventInput): Spec {
-  const detected = input.filename.includes(".")
-    ? input.filename.split(".").pop() || "txt"
-    : "txt";
   const sample = input.sampleText?.trim() ?? "";
-  const bodyMarkdown = sample
-    ? fenceMarkdown(detected, sample.slice(0, 6000))
-    : `_No text sample_ — showing hex preview instead.\n\n\`\`\`\n${input.hexPreview.slice(0, 1200)}\n\`\`\``;
+  const hasText = sample.length > 0;
+  const body = hasText ? sample.slice(0, 6000) : "";
+  const hex = input.hexPreview.slice(0, 4000) || "(no hex preview)";
+
+  if (hasText) {
+    return {
+      root: "card",
+      state: {
+        activeTab: "text",
+        body,
+        hex,
+      },
+      elements: {
+        card: {
+          type: "Card",
+          props: {
+            title: null,
+            description: null,
+            maxWidth: "full",
+            centered: null,
+          },
+          children: ["meta", "tabs"],
+        },
+        meta: {
+          type: "Text",
+          props: {
+            text: `${input.filename} · ${input.mimeType} · ${input.size} bytes`,
+            variant: "muted",
+          },
+          children: [],
+        },
+        tabs: {
+          type: "Tabs",
+          props: {
+            defaultValue: "text",
+            value: { $bindState: "/activeTab" },
+            tabs: [
+              { label: "Text", value: "text" },
+              { label: "Hex", value: "hex" },
+            ],
+          },
+          children: ["paneText", "paneHex"],
+        },
+        paneText: {
+          type: "Textarea",
+          props: {
+            label: "Contents",
+            name: "body",
+            placeholder: null,
+            rows: 12,
+            checks: null,
+            validateOn: null,
+            value: { $bindState: "/body" },
+          },
+          children: [],
+        },
+        paneHex: {
+          type: "Textarea",
+          props: {
+            label: "Hex",
+            name: "hex",
+            placeholder: null,
+            rows: 10,
+            checks: null,
+            validateOn: null,
+            value: { $bindState: "/hex" },
+          },
+          children: [],
+        },
+      },
+    };
+  }
 
   return {
     root: "card",
+    state: {
+      activeTab: "hex",
+      hex,
+    },
     elements: {
       card: {
         type: "Card",
@@ -46,17 +124,7 @@ export function buildFallbackSpec(input: InventInput): Spec {
           maxWidth: "full",
           centered: null,
         },
-        children: ["stack"],
-      },
-      stack: {
-        type: "Stack",
-        props: {
-          direction: "vertical",
-          gap: "md",
-          align: "stretch",
-          justify: "start",
-        },
-        children: ["meta", "body"],
+        children: ["meta", "tabs"],
       },
       meta: {
         type: "Text",
@@ -66,11 +134,38 @@ export function buildFallbackSpec(input: InventInput): Spec {
         },
         children: [],
       },
-      body: {
-        type: "MarkdownView",
+      tabs: {
+        type: "Tabs",
         props: {
-          markdown: bodyMarkdown,
-          title: null,
+          defaultValue: "hex",
+          value: { $bindState: "/activeTab" },
+          tabs: [
+            { label: "Hex", value: "hex" },
+            { label: "Notes", value: "notes" },
+          ],
+        },
+        children: ["paneHex", "paneNotes"],
+      },
+      paneHex: {
+        type: "Textarea",
+        props: {
+          label: "Hex",
+          name: "hex",
+          placeholder: null,
+          rows: 12,
+          checks: null,
+          validateOn: null,
+          value: { $bindState: "/hex" },
+        },
+        children: [],
+      },
+      paneNotes: {
+        type: "Alert",
+        props: {
+          title: "Binary / unknown",
+          message:
+            "No decodable text sample — hex preview only (host fallback).",
+          type: "info",
         },
         children: [],
       },
@@ -95,7 +190,6 @@ export function parseInventedSpec(raw: string): unknown | null {
   const text = normalizeInventOutput(raw);
   if (!text) return null;
 
-  // Single Spec object (one JSON value, not JSONL)
   if (text.startsWith("{") && !/"op"\s*:/.test(text)) {
     try {
       const obj = JSON.parse(text) as Record<string, unknown>;
@@ -105,7 +199,6 @@ export function parseInventedSpec(raw: string): unknown | null {
     }
   }
 
-  // SpecStream JSONL (possibly mixed with fences/prose)
   const lines = text
     .split("\n")
     .map((line) => line.trim())
@@ -118,7 +211,6 @@ export function parseInventedSpec(raw: string): unknown | null {
     }
   }
 
-  // Last resort: first {...} that looks like a Spec
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
   if (start >= 0 && end > start) {
@@ -140,6 +232,13 @@ const FORBIDDEN_TYPES = new Set([
   "InventedViewer",
   "SandboxedViewer",
   "BinaryInspector",
+  "AudioPlayer",
+  "VideoPlayer",
+  "PdfViewer",
+  "PixelEditor",
+  "TrackerPlayer",
+  "Spreadsheet",
+  "WebPageViewer",
 ]);
 
 /**
@@ -169,7 +268,7 @@ export function resolveInventPrompt(
 export function validateInventedSpec(
   value: unknown,
 ): { ok: true; spec: Spec } | { ok: false; error: string } {
-  const result = catalog.validate(value);
+  const result = inventCatalog.validate(value);
   if (!result.success) {
     const issues = result.error?.issues?.slice(0, 5) ?? [];
     const detail = issues
@@ -178,7 +277,9 @@ export function validateInventedSpec(
     return {
       ok: false,
       error:
-        detail || result.error?.message || "Spec failed catalog validation",
+        detail ||
+        result.error?.message ||
+        "Spec failed invent catalog validation",
     };
   }
   const spec = result.data as Spec;
@@ -189,12 +290,65 @@ export function validateInventedSpec(
         error: `Forbidden component type: ${el.type}`,
       };
     }
+    if (!inventCatalog.componentNames.includes(el.type)) {
+      return {
+        ok: false,
+        error: `Component not in invent catalog: ${el.type}`,
+      };
+    }
   }
   return { ok: true, spec };
 }
 
+type AcceptResult =
+  | { ok: true; spec: Spec }
+  | { ok: false; error: string };
+
+function acceptInventedRaw(parsed: unknown): AcceptResult {
+  if (!parsed || typeof parsed !== "object") {
+    return { ok: false, error: "Parsed value is not an object" };
+  }
+  const rawState =
+    "state" in parsed
+      ? (parsed as { state?: Spec["state"] }).state
+      : undefined;
+
+  const validated = validateInventedSpec(parsed);
+  if (!validated.ok) return validated;
+
+  const withState: Spec = {
+    ...validated.spec,
+    state: {
+      ...(typeof rawState === "object" && rawState ? rawState : {}),
+      ...(validated.spec.state ?? {}),
+    },
+  };
+
+  const quality = assessInventedSpecQuality(withState);
+  if (quality.length > 0) {
+    return { ok: false, error: formatQualityIssues(quality) };
+  }
+
+  return { ok: true, spec: withState };
+}
+
+async function callHaiku(
+  prompt: string,
+  options: { signal?: AbortSignal; apiKey: string },
+): Promise<string> {
+  const anthropic = createAnthropic({ apiKey: options.apiKey });
+  const result = await generateText({
+    model: anthropic("claude-haiku-4-5-20251001"),
+    abortSignal: options.signal,
+    maxOutputTokens: 4096,
+    prompt,
+  });
+  return result.text;
+}
+
 /**
- * Ask Haiku for a catalog Spec (SpecStream or JSON); fall back to host Spec.
+ * Ask Haiku for a catalog Spec (SpecStream or JSON); repair once on failure;
+ * fall back to host Spec.
  */
 export async function inventViewerSpec(
   input: InventInput,
@@ -206,7 +360,7 @@ export async function inventViewerSpec(
     const reason = "ANTHROPIC_API_KEY not set — Haiku unavailable";
     console.warn(`[invent-viewer] ${reason} — using fallback Spec.`);
     return {
-      spec: buildFallbackSpec(input),
+      spec: hydrateInventedSpec(buildFallbackSpec(input), input),
       source: "fallback",
       prompt,
       reason,
@@ -215,69 +369,105 @@ export async function inventViewerSpec(
   }
 
   try {
-    const anthropic = createAnthropic({ apiKey });
-    const result = await generateText({
-      model: anthropic("claude-haiku-4-5-20251001"),
-      abortSignal: options.signal,
-      maxOutputTokens: 4096,
-      prompt,
+    const firstRaw = await callHaiku(prompt, {
+      signal: options.signal,
+      apiKey,
     });
-
-    const parsed = parseInventedSpec(result.text);
-    if (!parsed) {
-      const reason = "Could not parse Spec/SpecStream from model output";
-      console.warn(`[invent-viewer] ${reason} — fallback.`);
+    const firstParsed = parseInventedSpec(firstRaw);
+    if (firstParsed) {
+      const accepted = acceptInventedRaw(firstParsed);
+      if (accepted.ok) {
+        return {
+          spec: hydrateInventedSpec(accepted.spec, input),
+          source: "haiku",
+          prompt,
+        };
+      }
       console.warn(
-        "[invent-viewer] raw head:",
-        result.text.slice(0, 240).replace(/\s+/g, " "),
+        `[invent-viewer] first pass rejected — ${accepted.error}; attempting repair.`,
       );
+
+      const repairPrompt = buildInventRepairPrompt({
+        basePrompt: prompt,
+        previousOutput: firstRaw,
+        errors: accepted.error,
+      });
+      const repairRaw = await callHaiku(repairPrompt, {
+        signal: options.signal,
+        apiKey,
+      });
+      const repairParsed = parseInventedSpec(repairRaw);
+      if (repairParsed) {
+        const repaired = acceptInventedRaw(repairParsed);
+        if (repaired.ok) {
+          console.warn("[invent-viewer] repair succeeded.");
+          return {
+            spec: hydrateInventedSpec(repaired.spec, input),
+            source: "haiku",
+            prompt,
+            repaired: true,
+          };
+        }
+        console.warn(
+          `[invent-viewer] repair still invalid — ${repaired.error} — fallback.`,
+        );
+        return {
+          spec: hydrateInventedSpec(buildFallbackSpec(input), input),
+          source: "fallback",
+          prompt,
+          reason: `Invalid Spec after repair: ${repaired.error}`,
+        };
+      }
+      console.warn("[invent-viewer] repair could not parse Spec — fallback.");
       return {
-        spec: buildFallbackSpec(input),
+        spec: hydrateInventedSpec(buildFallbackSpec(input), input),
         source: "fallback",
         prompt,
-        reason,
+        reason: "Could not parse Spec after repair",
       };
     }
 
-    // catalog.validate() strips `state` (not in the React schema) — preserve it,
-    // then seed any missing $bindState/$state paths from the file.
-    const rawState =
-      parsed &&
-      typeof parsed === "object" &&
-      "state" in parsed &&
-      (parsed as { state?: Spec["state"] }).state;
-
-    const validated = validateInventedSpec(parsed);
-    if (!validated.ok) {
-      const reason = `Invalid Spec: ${validated.error}`;
-      console.warn(`[invent-viewer] ${reason} — fallback.`);
-      return {
-        spec: buildFallbackSpec(input),
-        source: "fallback",
-        prompt,
-        reason,
-      };
+    console.warn(
+      "[invent-viewer] could not parse first output — attempting repair.",
+    );
+    console.warn(
+      "[invent-viewer] raw head:",
+      firstRaw.slice(0, 240).replace(/\s+/g, " "),
+    );
+    const repairPrompt = buildInventRepairPrompt({
+      basePrompt: prompt,
+      previousOutput: firstRaw,
+      errors: "Could not parse Spec/SpecStream from model output",
+    });
+    const repairRaw = await callHaiku(repairPrompt, {
+      signal: options.signal,
+      apiKey,
+    });
+    const repairParsed = parseInventedSpec(repairRaw);
+    if (repairParsed) {
+      const repaired = acceptInventedRaw(repairParsed);
+      if (repaired.ok) {
+        return {
+          spec: hydrateInventedSpec(repaired.spec, input),
+          source: "haiku",
+          prompt,
+          repaired: true,
+        };
+      }
     }
-
-    const withState: Spec = {
-      ...validated.spec,
-      state: {
-        ...(typeof rawState === "object" && rawState ? rawState : {}),
-        ...(validated.spec.state ?? {}),
-      },
-    };
 
     return {
-      spec: hydrateInventedSpec(withState, input),
-      source: "haiku",
+      spec: hydrateInventedSpec(buildFallbackSpec(input), input),
+      source: "fallback",
       prompt,
+      reason: "Could not parse Spec/SpecStream from model output",
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const reason = `Haiku request failed: ${message}`;
     console.warn(`[invent-viewer] ${reason}`);
     return {
-      spec: buildFallbackSpec(input),
+      spec: hydrateInventedSpec(buildFallbackSpec(input), input),
       source: "fallback",
       prompt,
       reason,

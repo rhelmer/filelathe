@@ -96,9 +96,20 @@ Jev never invents emulators or writes Spec JSON for unknowns. That separation is
 
 ### Haiku invents Specs
 
-When routing says `invent`, the server asks Haiku for a Spec that only uses components from the live catalog (`invent-prompt.ts` / `invent-viewer.ts`). Output is parsed, validated against the catalog, and hydrated with file state. Failures (missing key, bad JSON, invalid types) use a deterministic **fallback** Spec instead of crashing.
+When routing says `invent`, the server asks Haiku for a Spec that only uses the **invent catalog** (layout + text chrome — no media/host wrappers). The prompt includes format-specific hints and few-shot SpecStream examples (`invent-prompt.ts` / `invent-catalog.ts`).
 
-Users can edit the invent prompt in `InventedViewer` and re-run Haiku via `/api/invent-viewer`.
+Output is parsed, validated against the invent catalog, and checked by a **quality gate** (rejects “poster” Specs: Card→Markdown dumps without Tabs/Textarea). Failures get **one repair pass**; if still invalid (or Haiku is down / missing key), a host **fallback** Spec is used: Tabs Text|Hex (or Hex|Notes) with real sample/hex in `state` — still interactive, not a crash.
+
+Users can edit the invent prompt in `InventedViewer` and re-run Haiku via `/api/invent-viewer`. Offline checks: `pnpm invent-smoke`.
+
+### Fallbacks (quick map)
+
+| Failure | What you get |
+| --- | --- |
+| No / bad `ANTHROPIC_API_KEY`, Haiku HTTP error | Invent **fallback** mini-app (Tabs + Textarea) + warning toast |
+| Haiku output unparseable / fails catalog or quality gate | One repair; then invent **fallback** |
+| No / bad Jev key on **compose** (known files) | Hardcoded `buildFallbackComposeSpec` for that kind |
+| Jev invent-vs-inspect routing fails | Heuristic (text-ish → invent, opaque → inspect) |
 
 ## Where data is stored
 
@@ -142,8 +153,11 @@ Only Specs with `inventedBy: "haiku"` are reused from cache (not fallbacks). Pla
 | `src/route-unknown.ts` | Jev invent vs inspect |
 | `src/compose-lib.ts` | Orchestrates route → invent or Jev compose |
 | `src/evaluator.ts` | TypeSafe / Gateway Jev evaluator |
-| `src/invent-viewer.ts` | Haiku Spec invention + fallback |
-| `src/catalog.ts` / `registry.tsx` | json-render components Haiku and compose may use |
+| `src/invent-viewer.ts` | Haiku Spec invention, repair, quality gate, fallback |
+| `src/invent-catalog.ts` | Slim component set for invent prompts |
+| `src/invent-quality.ts` | Reject poster Specs |
+| `src/invent-prompt.ts` | Format hints + few-shots + repair prompt |
+| `src/catalog.ts` / `registry.tsx` | Full json-render components (compose + render) |
 | `src/sandbox-store.ts` | IndexedDB Spec cache |
 | `src/module-store.ts` | Session tracker bytes |
 | `src/toast.tsx` | Error / rate-limit / model-unavailable toasts |
@@ -159,4 +173,5 @@ pnpm build            # Vite production build → dist/
 pnpm check-types      # tsc --noEmit
 pnpm list-candidates  # dump compose candidates
 pnpm file-smoke       # smoke compose against sample files (needs .env)
+pnpm invent-smoke     # offline invent quality / fallback / scrub checks
 ```
