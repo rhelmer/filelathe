@@ -123,6 +123,7 @@ export function TrackerPlayer({
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
+          data-tracker-play=""
           className="rounded-full bg-primary px-3 py-1 text-xs text-primary-foreground disabled:opacity-50"
           disabled={!ready}
           onClick={() => void toggle()}

@@ -22,6 +22,7 @@ import { matchPlayers, plannedPlayer } from "./players";
 import { SavedSpecsPanel } from "./SavedSpecsPanel";
 import { useToast, ToastProvider } from "./toast";
 import { FilelatheLogo } from "./FilelatheLogo";
+import { prefersTouchUi } from "./touch-ui";
 import { WindowChrome, type WindowGeometry } from "./WindowChrome";
 
 type ComposeResponse = {
@@ -207,7 +208,7 @@ export function App() {
             restore: null,
           };
         }
-        const margin = 12;
+        const margin = prefersTouchUi() ? 6 : 12;
         return {
           ...item,
           maximized: true,
@@ -220,7 +221,7 @@ export function App() {
           },
           x: margin,
           y: margin,
-          width: Math.max(320, window.innerWidth - margin * 2),
+          width: Math.max(280, window.innerWidth - margin * 2),
           height: Math.max(240, window.innerHeight - margin * 2),
         };
       }),
@@ -229,6 +230,18 @@ export function App() {
   }
 
   function popOutWindow(item: WindowItem) {
+    // Mobile Safari turns window.open into a tab with cramped layout — expand
+    // in-place instead (same control is labeled Expand on touch UI).
+    if (prefersTouchUi()) {
+      if (!item.maximized) {
+        toggleMaximize(item.id);
+        setStatus(`Expanded ${item.file.filename} — tap ❐ to restore.`);
+      } else {
+        focusWindow(item.id);
+      }
+      return;
+    }
+
     const existing = popoutsRef.current.get(item.id);
     if (existing && !existing.popup.closed) {
       existing.popup.focus();
@@ -236,10 +249,18 @@ export function App() {
       return;
     }
 
+    const popW = Math.max(
+      720,
+      Math.min(Math.round(item.width), Math.round(window.screen.availWidth * 0.92)),
+    );
+    const popH = Math.max(
+      640,
+      Math.min(Math.round(item.height), Math.round(window.screen.availHeight * 0.88)),
+    );
     const popup = window.open(
       "",
-      `jev-popout-${item.id}`,
-      `popup=yes,width=${Math.round(item.width)},height=${Math.round(item.height)},left=${Math.round(item.x)},top=${Math.round(item.y)}`,
+      `filelathe-popout-${item.id}`,
+      `popup=yes,width=${popW},height=${popH},left=${Math.round(item.x)},top=${Math.round(item.y)}`,
     );
     if (!popup) {
       setStatus("Pop-out blocked — allow pop-ups for this site.");
@@ -252,25 +273,29 @@ export function App() {
       document.body.className || "bg-background text-foreground";
     popup.document.body.style.margin = "0";
     popup.document.body.style.minHeight = "100vh";
+    popup.document.body.style.background =
+      getComputedStyle(document.body).backgroundColor || "#faf8f3";
 
     const mount = popup.document.createElement("div");
-    mount.id = "jev-popout-root";
+    mount.id = "filelathe-popout-root";
     mount.style.minHeight = "100vh";
     mount.style.boxSizing = "border-box";
-    mount.style.padding = "16px";
+    mount.style.padding = "clamp(12px, 2vw, 24px)";
     popup.document.body.appendChild(mount);
 
     const root = createRoot(mount);
     root.render(
       <ToastProvider>
-        <div className="mx-auto flex min-h-[calc(100vh-32px)] max-w-5xl flex-col gap-3">
+        <div className="mx-auto flex min-h-[calc(100vh-24px)] w-full max-w-6xl flex-col gap-4">
           <header className="border-b pb-3">
-            <div className="text-sm font-medium">{item.file.title}</div>
-            <div className="text-xs text-muted-foreground">
+            <div className="text-base font-medium sm:text-lg">
+              {item.file.title}
+            </div>
+            <div className="text-sm text-muted-foreground">
               {labelForKind(item.file.kind)} · {item.file.filename}
             </div>
           </header>
-          <div className="min-h-0 flex-1 overflow-auto">
+          <div className="min-h-0 flex-1 overflow-auto text-base">
             <WindowBody spec={item.spec} />
           </div>
         </div>
@@ -395,6 +420,14 @@ export function App() {
       setStatus(
         `Opened ${labelForKind(opened.kind)} · ${opened.filename} · stopReason=${data.stopReason ?? "?"}${cacheBit}${routeBit}`,
       );
+      const touch = prefersTouchUi();
+      const margin = touch ? 8 : 24;
+      const openW = touch
+        ? Math.max(280, window.innerWidth - margin * 2)
+        : Math.min(DEFAULT_W, window.innerWidth - margin);
+      const openH = touch
+        ? Math.max(320, Math.round(window.innerHeight * 0.62))
+        : Math.min(DEFAULT_H, window.innerHeight - 48);
       return [
         ...items,
         {
@@ -402,11 +435,11 @@ export function App() {
           file: opened,
           spec: data.finalSpec!,
           prompt: data.prompt ?? "",
-          x: offset.x,
-          y: offset.y,
+          x: touch ? margin : offset.x,
+          y: touch ? Math.max(72, offset.y) : offset.y,
           z,
-          width: Math.min(DEFAULT_W, window.innerWidth - 24),
-          height: Math.min(DEFAULT_H, window.innerHeight - 48),
+          width: openW,
+          height: openH,
           minimized: false,
           maximized: false,
           poppedOut: false,
@@ -566,8 +599,8 @@ export function App() {
         {windows.length === 0 ? (
           <p className="py-16 text-center text-sm text-muted-foreground">
             Windows float over the page once you drop a file or URL. Drag the
-            title bar, resize from the corner, or use minimize / maximize /
-            pop-out.
+            title bar to move, resize from the corner, or expand / minimize.
+            On phones, use Expand instead of pop-out.
           </p>
         ) : null}
       </div>

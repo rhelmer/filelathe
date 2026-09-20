@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { readFile } from "node:fs/promises";
 import { createServer as createViteServer } from "vite";
 import {
   handleCompose,
@@ -101,12 +102,52 @@ const server = createServer((req, res) => {
   vite.middlewares(req, res, async () => {
     try {
       const pageUrl = req.url ?? "/";
+      const pathname = new URL(pageUrl, "http://localhost").pathname;
+
+      // Dedicated chiptune decode page for social demo capture (not the SPA shell).
+      if (pathname === "/mod-render.html") {
+        const raw = await readFile(
+          new URL("../mod-render.html", import.meta.url),
+          "utf8",
+        );
+        const html = await vite.transformIndexHtml(pageUrl, raw);
+        res.statusCode = 200;
+        res.setHeader("Content-Type", "text/html");
+        res.end(html);
+        return;
+      }
+
       const template = `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Filelathe</title>
+    <meta
+      name="description"
+      content="Drop a file or paste a URL and get the right tool — or a json-render mini-app invented for formats nothing else handles."
+    />
+    <link rel="canonical" href="https://filelathe.com/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Filelathe" />
+    <meta property="og:url" content="https://filelathe.com/" />
+    <meta property="og:title" content="Filelathe" />
+    <meta
+      property="og:description"
+      content="Swiss-army file utility: drop a file, get the right tool — or a mini-app invented for it. Built with json-render."
+    />
+    <meta property="og:image" content="https://filelathe.com/og.png" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Filelathe — swiss-army file utility" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Filelathe" />
+    <meta
+      name="twitter:description"
+      content="Drop a file. Get the right tool — or a mini-app invented for it. Built with json-render."
+    />
+    <meta name="twitter:image" content="https://filelathe.com/og.png" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/filelathe-logo.svg" />
   </head>

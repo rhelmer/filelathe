@@ -9,6 +9,12 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    rollupOptions: {
+      input: {
+        main: "index.html",
+        modRender: "mod-render.html",
+      },
+    },
   },
   optimizeDeps: {
     exclude: ["chiptune3"],

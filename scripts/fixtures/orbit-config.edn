@@ -1,0 +1,2 @@
+;; Filelathe invent demo — sparse EDN-ish config
+{:app "filelathe" :format :edn :widgets [{:id 1 :label "orbit"} {:id 2 :label "lathe"}]}

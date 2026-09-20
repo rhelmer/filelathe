@@ -1,8 +1,14 @@
 # Filelathe
 
+**Live:** [filelathe.com](https://filelathe.com)
+
 Drop a file or paste a URL and get a floating window with the right tool — media players, editors, inspectors, or a freshly invented mini-app for formats nothing else handles.
 
 Dual-model idea: **Jev** decides and composes; **Haiku** invents Specs when the format is unknown. Hosted as a **Vite SPA + Vercel serverless APIs**.
+
+Source: [github.com/rhelmer/filelathe](https://github.com/rhelmer/filelathe)
+
+Demo capture for social clips: `pnpm demo:capture` (`scripts/social-media/capture-filelathe-demo.mjs`).
 
 ## Quick start
 

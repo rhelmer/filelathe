@@ -9,3 +9,9 @@ dist
 .DS_Store
 .vercel
 .env*
+tmp/
+scripts/fixtures/*.mod
+public/demo/*.mod
+scripts/social-media/filelathe-launch-posts.md
+test-results/
+playwright-report/

@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "list-candidates": "tsx src/list.ts",
     "file-smoke": "tsx --env-file=.env src/file-smoke.ts",
-    "check-types": "tsc --noEmit"
+    "check-types": "tsc --noEmit",
+    "demo:capture": "node scripts/social-media/capture-filelathe-demo.mjs"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "4.0.58",
@@ -34,6 +35,7 @@
     "zod": "4.3.6"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/vite": "^4.1.18",
     "@types/node": "^22.10.0",
     "@types/react": "19.2.3",

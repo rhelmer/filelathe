@@ -16,6 +16,7 @@ declare module "chiptune3" {
     onError(handler: (err: { type?: string }) => void): void;
     onMetadata(handler: (meta: Record<string, unknown>) => void): void;
     onProgress(handler: (info: { pos?: number }) => void): void;
+    onFullAudioData(handler: (msg: unknown) => void): void;
     play(buffer: ArrayBuffer): void;
     stop(): void;
     pause(): void;
@@ -24,5 +25,6 @@ declare module "chiptune3" {
     setRepeatCount(val: number): void;
     setPos(val: number): void;
     setVol(val: number): void;
+    decodeAll(buffer: ArrayBuffer): void;
   }
 }
