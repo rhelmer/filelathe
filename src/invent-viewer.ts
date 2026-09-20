@@ -10,6 +10,7 @@ import {
 import {
   buildInventPrompt,
   buildInventRepairPrompt,
+  analyzeFileSample,
   type InventInput,
 } from "./invent-prompt";
 
@@ -32,21 +33,41 @@ export type InventViewerResult = {
 
 /**
  * Deterministic mini-app when Haiku is unavailable or still invalid after repair.
- * Uses Tabs Text|Hex (or Hex|Notes for binary) — not a poster dump.
+ * Structured text → Overview|Source; binary → Hex|Notes.
  */
 export function buildFallbackSpec(input: InventInput): Spec {
   const sample = input.sampleText?.trim() ?? "";
   const hasText = sample.length > 0;
   const body = hasText ? sample.slice(0, 6000) : "";
   const hex = input.hexPreview.slice(0, 4000) || "(no hex preview)";
+  const analysis = analyzeFileSample(input.filename, input.sampleText, input.size);
 
   if (hasText) {
+    const metricEls: Record<string, Spec["elements"][string]> = {};
+    const metricIds: string[] = [];
+    for (const [i, m] of analysis.metrics.slice(0, 4).entries()) {
+      const id = `metric${i}`;
+      metricIds.push(id);
+      metricEls[id] = {
+        type: "Metric",
+        props: {
+          label: m.label,
+          value: m.value,
+          change: null,
+          changeType: null,
+          prefix: null,
+          suffix: null,
+        },
+        children: [],
+      };
+    }
+
     return {
       root: "card",
       state: {
-        activeTab: "text",
+        activeTab: "overview",
+        summary: analysis.summaryMarkdown,
         body,
-        hex,
       },
       elements: {
         card: {
@@ -57,51 +78,60 @@ export function buildFallbackSpec(input: InventInput): Spec {
             maxWidth: "full",
             centered: null,
           },
-          children: ["meta", "tabs"],
-        },
-        meta: {
-          type: "Text",
-          props: {
-            text: `${input.filename} · ${input.mimeType} · ${input.size} bytes`,
-            variant: "muted",
-          },
-          children: [],
+          children: ["tabs"],
         },
         tabs: {
           type: "Tabs",
           props: {
-            defaultValue: "text",
+            defaultValue: "overview",
             value: { $bindState: "/activeTab" },
             tabs: [
-              { label: "Text", value: "text" },
-              { label: "Hex", value: "hex" },
+              { label: "Overview", value: "overview" },
+              { label: "Structure", value: "structure" },
+              { label: "Source", value: "source" },
             ],
           },
-          children: ["paneText", "paneHex"],
+          children: ["paneOverview", "paneStructure", "paneSource"],
         },
-        paneText: {
-          type: "Textarea",
+        paneOverview: {
+          type: "MarkdownView",
           props: {
-            label: "Contents",
-            name: "body",
-            placeholder: null,
-            rows: 12,
-            checks: null,
-            validateOn: null,
-            value: { $bindState: "/body" },
+            markdown: { $bindState: "/summary" },
+            title: null,
           },
           children: [],
         },
-        paneHex: {
+        paneStructure: {
+          type: "Stack",
+          props: {
+            direction: "vertical",
+            gap: "sm",
+            align: null,
+            justify: null,
+            wrap: null,
+          },
+          children: [...metricIds, "alertChecks"],
+        },
+        ...metricEls,
+        alertChecks: {
+          type: "Alert",
+          props: {
+            title: analysis.identity,
+            message: analysis.checks.slice(0, 3).join(" ") || analysis.facts[0] || "",
+            type: "info",
+          },
+          children: [],
+        },
+        paneSource: {
           type: "Textarea",
           props: {
-            label: "Hex",
-            name: "hex",
+            label: "Source",
+            name: "body",
             placeholder: null,
-            rows: 10,
+            rows: 14,
             checks: null,
             validateOn: null,
-            value: { $bindState: "/hex" },
+            value: { $bindState: "/body" },
           },
           children: [],
         },

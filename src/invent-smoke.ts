@@ -7,7 +7,7 @@ import {
   assessInventedSpecQuality,
   formatQualityIssues,
 } from "./invent-quality";
-import { detectContentKind } from "./invent-prompt";
+import { analyzeFileSample, detectContentKind } from "./invent-prompt";
 import {
   buildFallbackSpec,
   parseInventedSpec,
@@ -25,6 +25,12 @@ function check(name: string, ok: boolean, detail = "") {
     console.error(`  FAIL ${name}${detail ? ` — ${detail}` : ""}`);
   }
 }
+
+const sitemapSample = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://www.filelathe.com/</loc></url>
+  <url><loc>https://www.filelathe.com/formats/</loc></url>
+</urlset>`;
 
 const fixtures: InventInput[] = [
   {
@@ -52,6 +58,14 @@ const fixtures: InventInput[] = [
     sampleText: null,
     hexPreview: "000000  00 01 02 03 04 05 ff fe",
   },
+  {
+    title: "sitemap",
+    filename: "sitemap.xml",
+    mimeType: "application/xml",
+    size: sitemapSample.length,
+    sampleText: sitemapSample,
+    hexPreview: "000000  3c 3f 78 6d 6c",
+  },
 ];
 
 console.log("detectContentKind");
@@ -70,6 +84,27 @@ check(
   "binary",
   detectContentKind("mystery.bin", null).kind.includes("binary"),
 );
+check(
+  "sitemap",
+  detectContentKind("sitemap.xml", sitemapSample).kind.includes("sitemap"),
+);
+check(
+  "sitemap no hex",
+  detectContentKind("sitemap.xml", sitemapSample).wantHex === false,
+);
+
+console.log("analyzeFileSample");
+const sitemapAnalysis = analyzeFileSample("sitemap.xml", sitemapSample, 200);
+check("sitemap identity", /sitemap/i.test(sitemapAnalysis.identity));
+check(
+  "sitemap loc facts",
+  sitemapAnalysis.facts.some((f) => /loc/i.test(f)),
+);
+check(
+  "sitemap summary",
+  /sitemap/i.test(sitemapAnalysis.summaryMarkdown) &&
+    sitemapAnalysis.summaryMarkdown.includes("filelathe.com"),
+);
 
 console.log("fallback Specs");
 for (const input of fixtures) {
@@ -86,6 +121,7 @@ for (const input of fixtures) {
 console.log("poster rejection");
 const poster = {
   root: "card",
+  state: {},
   elements: {
     card: {
       type: "Card",
@@ -105,15 +141,18 @@ const poster = {
   },
 };
 const posterIssues = assessInventedSpecQuality(poster as never);
-check("poster flagged", posterIssues.some((i) => i.code === "poster" || i.code === "no_panes"));
+check(
+  "poster flagged",
+  posterIssues.some((i) => i.code === "poster" || i.code === "no_panes"),
+);
 
-console.log("parse SpecStream few-shot shape");
+console.log("parse SpecStream overview shape");
 const stream = [
-  '{"op":"set","path":"/state","value":{"activeTab":"text","body":"hi","hex":"00"}}',
+  '{"op":"set","path":"/state","value":{"activeTab":"overview","summary":"## Sitemap\\n\\nOK","body":"<urlset/>"}}',
   '{"op":"add","path":"/elements/card","value":{"type":"Card","props":{"title":null,"description":null,"maxWidth":"full","centered":null},"children":["tabs"]}}',
-  '{"op":"add","path":"/elements/tabs","value":{"type":"Tabs","props":{"defaultValue":"text","value":{"$bindState":"/activeTab"},"tabs":[{"label":"Text","value":"text"},{"label":"Hex","value":"hex"}]},"children":["paneText","paneHex"]}}',
-  '{"op":"add","path":"/elements/paneText","value":{"type":"Textarea","props":{"label":"Contents","name":"body","placeholder":null,"rows":8,"value":{"$bindState":"/body"},"checks":null,"validateOn":null},"children":[]}}',
-  '{"op":"add","path":"/elements/paneHex","value":{"type":"Textarea","props":{"label":"Hex","name":"hex","placeholder":null,"rows":8,"value":{"$bindState":"/hex"},"checks":null,"validateOn":null},"children":[]}}',
+  '{"op":"add","path":"/elements/tabs","value":{"type":"Tabs","props":{"defaultValue":"overview","value":{"$bindState":"/activeTab"},"tabs":[{"label":"Overview","value":"overview"},{"label":"Source","value":"source"}]},"children":["paneOverview","paneSource"]}}',
+  '{"op":"add","path":"/elements/paneOverview","value":{"type":"MarkdownView","props":{"markdown":{"$bindState":"/summary"},"title":null},"children":[]}}',
+  '{"op":"add","path":"/elements/paneSource","value":{"type":"Textarea","props":{"label":"Source","name":"body","placeholder":null,"rows":8,"value":{"$bindState":"/body"},"checks":null,"validateOn":null},"children":[]}}',
   '{"op":"add","path":"/root","value":"card"}',
 ].join("\n");
 const parsed = parseInventedSpec(stream);
@@ -125,6 +164,26 @@ if (parsed) {
     const q = assessInventedSpecQuality(v.spec);
     check("quality stream", q.length === 0, formatQualityIssues(q));
   }
+}
+
+console.log("reject text|hex dump");
+const dumpStream = [
+  '{"op":"set","path":"/state","value":{"activeTab":"text","body":"hi","hex":"00"}}',
+  '{"op":"add","path":"/elements/card","value":{"type":"Card","props":{"title":null,"description":null,"maxWidth":"full","centered":null},"children":["tabs"]}}',
+  '{"op":"add","path":"/elements/tabs","value":{"type":"Tabs","props":{"defaultValue":"text","value":{"$bindState":"/activeTab"},"tabs":[{"label":"Text","value":"text"},{"label":"Hex","value":"hex"}]},"children":["paneText","paneHex"]}}',
+  '{"op":"add","path":"/elements/paneText","value":{"type":"Textarea","props":{"label":"Contents","name":"body","placeholder":null,"rows":8,"value":{"$bindState":"/body"},"checks":null,"validateOn":null},"children":[]}}',
+  '{"op":"add","path":"/elements/paneHex","value":{"type":"Textarea","props":{"label":"Hex","name":"hex","placeholder":null,"rows":8,"value":{"$bindState":"/hex"},"checks":null,"validateOn":null},"children":[]}}',
+  '{"op":"add","path":"/root","value":"card"}',
+].join("\n");
+const dumpParsed = parseInventedSpec(dumpStream);
+check("parse dump", dumpParsed != null);
+if (dumpParsed) {
+  const q = assessInventedSpecQuality(dumpParsed as never);
+  check(
+    "text_hex flagged",
+    q.some((i) => i.code === "text_hex_dump"),
+    formatQualityIssues(q),
+  );
 }
 
 console.log("contrib scrub");
