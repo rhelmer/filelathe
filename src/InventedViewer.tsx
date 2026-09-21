@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Spec } from "@json-render/core";
 import { JSONUIProvider, Renderer } from "@json-render/react";
+import { extensionFromFilename, track } from "./analytics";
 import { readApiError, toastMessageForApiError } from "./api-error";
 import { InventingAnimation } from "./InventingAnimation";
 import { hydrateInventedSpec } from "./invent-hydrate";
@@ -77,6 +78,9 @@ export function InventedViewer({
   }, [specJson, props.invent]);
 
   async function regenerate() {
+    track("invent_regenerate", {
+      ext: extensionFromFilename(props.invent.filename),
+    });
     setBusy(true);
     setError(null);
     try {
