@@ -1,3 +1,6 @@
+import { useRef } from "react";
+import { usePersistedMedia } from "./use-persisted-media";
+
 export function PdfViewer({
   props,
 }: {
@@ -36,12 +39,16 @@ export function VideoPlayer({
     title: string | null;
   };
 }) {
+  const mediaRef = useRef<HTMLVideoElement | null>(null);
+  usePersistedMedia(mediaRef, props.src);
+
   return (
     <div className="space-y-2">
       {props.title ? (
         <div className="text-sm font-medium">{props.title}</div>
       ) : null}
       <video
+        ref={mediaRef}
         className="w-full rounded-lg border bg-black"
         controls
         src={props.src}

@@ -31,6 +31,8 @@ import {
   reviveWindow,
   saveSession,
 } from "./session-store";
+import { clearMediaPlayback, setMediaPlayback } from "./media-playback";
+import { MediaPlaybackProvider } from "./media-playback-context";
 import { getModule } from "./module-store";
 import { matchPlayers, plannedPlayer } from "./players";
 import { SavedSpecsPanel } from "./SavedSpecsPanel";
@@ -92,12 +94,34 @@ function copyStylesTo(targetDoc: Document) {
   }
 }
 
-function WindowBody({ spec }: { spec: Spec }) {
+function WindowBody({
+  spec,
+  playbackKey,
+}: {
+  spec: Spec;
+  playbackKey: string;
+}) {
   return (
-    <JSONUIProvider registry={registry} initialState={spec.state ?? {}}>
-      <Renderer spec={spec} registry={registry} />
-    </JSONUIProvider>
+    <MediaPlaybackProvider playbackKey={playbackKey}>
+      <div data-filelathe-playback={playbackKey}>
+        <JSONUIProvider registry={registry} initialState={spec.state ?? {}}>
+          <Renderer spec={spec} registry={registry} />
+        </JSONUIProvider>
+      </div>
+    </MediaPlaybackProvider>
   );
+}
+
+/** Snapshot live media elements into the playback store before remounting. */
+function flushPlaybackFromDom(playbackKey: string, doc: Document = document) {
+  const root = doc.querySelector(`[data-filelathe-playback="${playbackKey}"]`);
+  if (!root) return;
+  const media = root.querySelector("audio, video") as HTMLMediaElement | null;
+  if (!media) return;
+  setMediaPlayback(playbackKey, {
+    currentTime: media.currentTime,
+    playing: !media.paused && !media.ended,
+  });
 }
 
 export function App() {
@@ -296,6 +320,7 @@ export function App() {
 
   function closeWindow(id: string) {
     closePopout(id);
+    clearMediaPlayback(id);
     setWindows((items) => {
       const closing = items.find((item) => item.id === id);
       if (closing) revokeLoadedFile(closing.file);
@@ -390,6 +415,8 @@ export function App() {
       return;
     }
 
+    flushPlaybackFromDom(item.id);
+
     const popW = Math.max(
       720,
       Math.min(Math.round(item.width), Math.round(window.screen.availWidth * 0.92)),
@@ -437,7 +464,7 @@ export function App() {
             </div>
           </header>
           <div className="min-h-0 flex-1 overflow-auto text-base">
-            <WindowBody spec={item.spec} />
+            <WindowBody spec={item.spec} playbackKey={item.id} />
           </div>
         </div>
       </ToastProvider>,
@@ -467,6 +494,10 @@ export function App() {
   }
 
   function dockWindow(id: string) {
+    const entry = popoutsRef.current.get(id);
+    if (entry && !entry.popup.closed) {
+      flushPlaybackFromDom(id, entry.popup.document);
+    }
     closePopout(id);
     patchWindow(id, { poppedOut: false });
     setStatus("Window docked back into the page.");
@@ -954,8 +985,8 @@ export function App() {
             onPopOut={() => popOutWindow(item)}
             onDock={() => dockWindow(item.id)}
           >
-            {!item.poppedOut && !item.minimized ? (
-              <WindowBody spec={item.spec} />
+            {!item.poppedOut ? (
+              <WindowBody spec={item.spec} playbackKey={item.id} />
             ) : null}
           </WindowChrome>
         ))}

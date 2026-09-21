@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { ChiptuneJsPlayer } from "chiptune3";
 import { track } from "./analytics";
+import {
+  getMediaPlayback,
+  setMediaPlayback,
+} from "./media-playback";
+import { useMediaPlaybackKey } from "./media-playback-context";
 import { getModule } from "./module-store";
 import {
   getSharedTrackerContext,
@@ -34,9 +39,13 @@ export function TrackerPlayer({
     channels: number | null;
   };
 }) {
+  const playbackKey = useMediaPlaybackKey();
   const playerRef = useRef<PlayerHandle | null>(null);
   const startedRef = useRef(false);
   const trackedPlayRef = useRef(false);
+  const playingRef = useRef(false);
+  const positionRef = useRef(0);
+  const restoredRef = useRef(false);
   const [ready, setReady] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,6 +53,14 @@ export function TrackerPlayer({
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
   const [bootId, setBootId] = useState(0);
+
+  useEffect(() => {
+    playingRef.current = playing;
+  }, [playing]);
+
+  useEffect(() => {
+    positionRef.current = position;
+  }, [position]);
 
   useEffect(() => {
     const buffer = getModule(props.moduleId);
@@ -58,6 +75,7 @@ export function TrackerPlayer({
     let cancelled = false;
     let initialized = false;
     startedRef.current = false;
+    restoredRef.current = false;
     setReady(false);
     setError(null);
     setPlaying(false);
@@ -81,6 +99,44 @@ export function TrackerPlayer({
       );
     }, WORKLET_TIMEOUT_MS);
 
+    const persist = (patch: { currentTime?: number; playing?: boolean }) => {
+      if (!playbackKey) return;
+      setMediaPlayback(playbackKey, patch);
+    };
+
+    const tryRestore = async () => {
+      if (cancelled || restoredRef.current || !playbackKey) return;
+      const saved = getMediaPlayback(playbackKey);
+      if (!saved || (saved.currentTime <= 0 && !saved.playing)) {
+        restoredRef.current = true;
+        return;
+      }
+      restoredRef.current = true;
+      try {
+        await resumeTrackerContext();
+        player.play(buffer.slice(0));
+        startedRef.current = true;
+        if (saved.currentTime > 0) {
+          player.setPos(saved.currentTime);
+          setPosition(saved.currentTime);
+        }
+        if (saved.playing) {
+          setPlaying(true);
+          persist({ playing: true, currentTime: saved.currentTime });
+        } else {
+          player.pause();
+          setPlaying(false);
+          persist({ playing: false, currentTime: saved.currentTime });
+        }
+      } catch {
+        // Autoplay / AudioContext may block resume after reload — keep seek.
+        if (saved.currentTime > 0) {
+          setPosition(saved.currentTime);
+          persist({ playing: false, currentTime: saved.currentTime });
+        }
+      }
+    };
+
     player.onInitialized(() => {
       if (cancelled) {
         try {
@@ -102,6 +158,7 @@ export function TrackerPlayer({
       setError(null);
       setReady(true);
       player.setRepeatCount(0);
+      void tryRestore();
     });
     player.onMetadata((info: Meta) => {
       if (cancelled) return;
@@ -110,11 +167,15 @@ export function TrackerPlayer({
     });
     player.onProgress((info: { pos?: number }) => {
       if (cancelled) return;
-      if (typeof info.pos === "number") setPosition(info.pos);
+      if (typeof info.pos === "number") {
+        setPosition(info.pos);
+        persist({ currentTime: info.pos });
+      }
     });
     player.onEnded(() => {
       if (cancelled) return;
       setPlaying(false);
+      persist({ playing: false, currentTime: 0 });
     });
     player.onError((err: { type?: string }) => {
       if (cancelled) return;
@@ -124,6 +185,12 @@ export function TrackerPlayer({
     return () => {
       cancelled = true;
       window.clearTimeout(failTimer);
+      if (playbackKey) {
+        setMediaPlayback(playbackKey, {
+          currentTime: positionRef.current,
+          playing: playingRef.current,
+        });
+      }
       playerRef.current = null;
       try {
         player.stop();
@@ -133,7 +200,7 @@ export function TrackerPlayer({
         // ignore — never close the shared AudioContext
       }
     };
-  }, [props.moduleId, bootId]);
+  }, [props.moduleId, bootId, playbackKey]);
 
   async function toggle() {
     const player = playerRef.current;
@@ -150,9 +217,20 @@ export function TrackerPlayer({
     try {
       await resumeTrackerContext();
       if (!startedRef.current) {
+        const saved = playbackKey ? getMediaPlayback(playbackKey) : undefined;
         player.play(buffer.slice(0));
         startedRef.current = true;
+        if (saved && saved.currentTime > 0) {
+          player.setPos(saved.currentTime);
+          setPosition(saved.currentTime);
+        }
         setPlaying(true);
+        if (playbackKey) {
+          setMediaPlayback(playbackKey, {
+            playing: true,
+            currentTime: saved?.currentTime ?? 0,
+          });
+        }
         if (!trackedPlayRef.current) {
           trackedPlayRef.current = true;
           track("tracker_play", {
@@ -162,7 +240,16 @@ export function TrackerPlayer({
         return;
       }
       player.togglePause();
-      setPlaying((value) => !value);
+      setPlaying((value) => {
+        const next = !value;
+        if (playbackKey) {
+          setMediaPlayback(playbackKey, {
+            playing: next,
+            currentTime: positionRef.current,
+          });
+        }
+        return next;
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -175,6 +262,9 @@ export function TrackerPlayer({
     startedRef.current = false;
     setPlaying(false);
     setPosition(0);
+    if (playbackKey) {
+      setMediaPlayback(playbackKey, { playing: false, currentTime: 0 });
+    }
   }
 
   const title = meta?.title || props.title || "Tracker module";
