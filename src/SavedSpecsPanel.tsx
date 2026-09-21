@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { track } from "./analytics";
 import {
   downloadContribJson,
   proposeSpecOnGithub,
@@ -65,6 +66,10 @@ export function SavedSpecsPanel({
   }, [reload, refreshToken, toast]);
 
   async function propose(record: SandboxRecord) {
+    track("miniapp_propose", {
+      ext: record.extension || "none",
+      scope: record.scope,
+    });
     setBusyKey(record.key);
     try {
       const result = await proposeSpecOnGithub(record);

@@ -2,6 +2,13 @@ import { useEffect, useId, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { Spec } from "@json-render/core";
 import { JSONUIProvider, Renderer } from "@json-render/react";
+import {
+  classifyOpenError,
+  extensionFromFilename,
+  track,
+  type FileOpenSource,
+  type InventOutcome,
+} from "./analytics";
 import { readApiError, toastMessageForApiError } from "./api-error";
 import { fetchedToFile, type FetchedResource } from "./fetch-resource";
 import {
@@ -466,8 +473,9 @@ export function App() {
     focusWindow(id);
   }
 
-  async function composeAndOpen(file: LoadedFile) {
+  async function composeAndOpen(file: LoadedFile, source: FileOpenSource) {
     let toCompose = file;
+    let plannedInspect = false;
 
     if (file.kind === "unknown" && !file.inventedSpec) {
       const planned = plannedPlayer(
@@ -490,6 +498,7 @@ export function App() {
           setStatus(`Detected ${labelForKind(file.kind)} — routing…`);
         }
       } else {
+        plannedInspect = true;
         setStatus(
           `Detected ${planned.label} (planned) — inspector, not invent…`,
         );
@@ -508,10 +517,17 @@ export function App() {
     const data = (await response.json()) as ComposeResponse;
     if (!data.finalSpec) throw new Error("Compose returned no spec.");
     for (const warning of data.warnings ?? []) {
+      const lower = warning.toLowerCase();
+      const which = lower.includes("haiku")
+        ? "haiku"
+        : lower.includes("jev")
+          ? "jev"
+          : null;
+      if (which) track("api_degraded", { which });
       toast({
-        title: warning.toLowerCase().includes("haiku")
+        title: which === "haiku"
           ? "Haiku unavailable"
-          : warning.toLowerCase().includes("jev")
+          : which === "jev"
             ? "Jev unavailable"
             : "Using fallback",
         description: warning,
@@ -521,6 +537,33 @@ export function App() {
     }
 
     const opened = data.file ?? toCompose;
+    const ext = extensionFromFilename(opened.filename);
+    const inventSource =
+      opened.kind === "unknown" ? opened.inventSource ?? null : null;
+
+    track("file_opened", {
+      source,
+      kind: opened.kind,
+      ext,
+      route: data.route ?? "compose",
+      invent_source: inventSource ?? "none",
+    });
+
+    if (opened.kind === "unknown") {
+      let outcome: InventOutcome;
+      if (
+        inventSource === "haiku" ||
+        inventSource === "cache" ||
+        inventSource === "fallback"
+      ) {
+        outcome = inventSource;
+      } else if (plannedInspect || data.route === "inspect") {
+        outcome = "planned_inspector";
+      } else {
+        outcome = "fallback";
+      }
+      track("invent_result", { outcome, ext });
+    }
 
     if (
       opened.kind === "unknown" &&
@@ -584,7 +627,10 @@ export function App() {
     });
   }
 
-  async function openFromFile(raw: File | undefined) {
+  async function openFromFile(
+    raw: File | undefined,
+    source: Exclude<FileOpenSource, "url">,
+  ) {
     if (!raw) return; // picker cancel — stay quiet
     if (busyRef.current) {
       toast({
@@ -595,12 +641,17 @@ export function App() {
       });
       return;
     }
+    track("file_open", { source });
     setBusyFlag(true);
     setStatus(`Opening ${raw.name}…`);
     try {
       const file = await loadDroppedFile(raw);
-      await composeAndOpen(file);
+      await composeAndOpen(file, source);
     } catch (error) {
+      track("file_open_failed", {
+        source,
+        reason: classifyOpenError(error, "compose"),
+      });
       toastApiFailure(error);
       setStatus(error instanceof Error ? error.message : String(error));
     } finally {
@@ -619,8 +670,10 @@ export function App() {
       });
       return;
     }
+    track("file_open", { source: "url" });
     setBusyFlag(true);
     setStatus("Fetching URL…");
+    let stage: "fetch" | "compose" = "fetch";
     try {
       const response = await fetch("/api/fetch-resource", {
         method: "POST",
@@ -636,9 +689,14 @@ export function App() {
         file.kind === "unknown" || file.kind === "webpage"
           ? { ...file, sourceUrl: data.url }
           : file;
-      await composeAndOpen(withSource);
+      stage = "compose";
+      await composeAndOpen(withSource, "url");
       setUrlDraft("");
     } catch (error) {
+      track("file_open_failed", {
+        source: "url",
+        reason: classifyOpenError(error, stage),
+      });
       toastApiFailure(error);
       setStatus(error instanceof Error ? error.message : String(error));
     } finally {
@@ -664,7 +722,7 @@ export function App() {
   acceptDroppedPayloadRef.current = (dt: DataTransfer | null) => {
     const file = fileFromDataTransfer(dt);
     if (file) {
-      void openFromFile(file);
+      void openFromFile(file, "drop");
       return;
     }
     const uri =
@@ -678,6 +736,7 @@ export function App() {
     const claimedFiles = Array.from(dt?.types ?? []).some(
       (t) => t === "Files" || t === "application/x-moz-file",
     );
+    track("file_open_failed", { source: "drop", reason: "drop_empty" });
     toast({
       title: "Couldn't read that drop",
       description: claimedFiles
@@ -834,7 +893,7 @@ export function App() {
                   });
                   return;
                 }
-                void openFromFile(next);
+                void openFromFile(next, "picker");
               }}
             />
           </div>

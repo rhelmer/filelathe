@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ChiptuneJsPlayer } from "chiptune3";
+import { track } from "./analytics";
 import { getModule } from "./module-store";
 import {
   getSharedTrackerContext,
@@ -35,6 +36,7 @@ export function TrackerPlayer({
 }) {
   const playerRef = useRef<PlayerHandle | null>(null);
   const startedRef = useRef(false);
+  const trackedPlayRef = useRef(false);
   const [ready, setReady] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -151,6 +153,12 @@ export function TrackerPlayer({
         player.play(buffer.slice(0));
         startedRef.current = true;
         setPlaying(true);
+        if (!trackedPlayRef.current) {
+          trackedPlayRef.current = true;
+          track("tracker_play", {
+            format: (props.format || "mod").toLowerCase(),
+          });
+        }
         return;
       }
       player.togglePause();
