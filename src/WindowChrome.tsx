@@ -334,15 +334,19 @@ export function WindowChrome({
           ×
         </button>
       </div>
-      {!minimized ? (
-        <div
-          className={`relative min-h-0 flex-1 overflow-auto ${
-            touchUi ? "p-3 text-base" : "p-4"
-          }`}
-        >
-          {children}
-        </div>
-      ) : null}
+      {/* Keep body mounted while minimized so audio/video keep playing. */}
+      <div
+        className={
+          minimized
+            ? "pointer-events-none absolute h-px w-px overflow-hidden opacity-0"
+            : `relative min-h-0 flex-1 overflow-auto ${
+                touchUi ? "p-3 text-base" : "p-4"
+              }`
+        }
+        aria-hidden={minimized || undefined}
+      >
+        {children}
+      </div>
       {!minimized && !maximized ? (
         <div
           className={`absolute bottom-0 right-0 cursor-se-resize touch-none ${
