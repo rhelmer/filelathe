@@ -84,6 +84,12 @@ function layout(options: {
         <p><a href="/formats/">All formats</a> · <a href="/guides/">Guides</a> · <a href="/sitemap.xml">Sitemap</a></p>
       </footer>
     </div>
+    <script
+      defer
+      src="https://analytics.filelathe.com/script.js"
+      data-website-id="d541d56b-db29-4768-90a9-7e5f80731512"
+      data-performance="true"
+    ></script>
   </body>
 </html>
 `;
