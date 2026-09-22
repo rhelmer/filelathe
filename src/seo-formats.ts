@@ -30,7 +30,8 @@ export type SeoFormat = {
     | "documents"
     | "data"
     | "web"
-    | "config";
+    | "config"
+    | "archive";
 };
 
 const trackerBlurb =
@@ -575,6 +576,80 @@ export const SEO_FORMATS: SeoFormat[] = [
       "Open .env files in your browser carefully — Filelathe keeps processing local to your tab.",
     blurb:
       "Environment files stay in your browser session. Prefer local files you trust; Filelathe does not need them uploaded to invent a simple viewer.",
+  },
+
+  // Archives & containers
+  {
+    slug: "zip",
+    ext: "zip",
+    also: ["tar", "gz", "docx", "epub"],
+    name: "ZIP archive",
+    capability: "inspect",
+    group: "archive",
+    description:
+      "Open ZIP files in your browser. List entries and click to open any file inside — extraction stays local in your tab.",
+    blurb:
+      "Filelathe reads the ZIP directory in your browser, shows the entry list with sizes, and lets you open an inner file (text, image, PDF, or a nested archive) in its own window. Bytes are never uploaded.",
+  },
+  {
+    slug: "docx",
+    ext: "docx",
+    also: ["odt", "pptx", "xlsx", "zip"],
+    name: "Word document (DOCX)",
+    capability: "view",
+    group: "archive",
+    description:
+      "Open DOCX files in your browser. Filelathe extracts the document text and lists the package parts — no Office install.",
+    blurb:
+      "DOCX is a ZIP package. Filelathe reads word/document.xml locally, strips the XML to readable text, and lists every part so you can peek at a Word document without uploading it.",
+  },
+  {
+    slug: "odt",
+    ext: "odt",
+    also: ["ods", "odp", "docx", "zip"],
+    name: "OpenDocument Text (ODT)",
+    capability: "view",
+    group: "archive",
+    description:
+      "Open ODT files in your browser. Filelathe extracts content.xml text and lists the OpenDocument package entries locally.",
+    blurb:
+      "ODT/ODS/ODP are ZIP packages. Filelathe reads content.xml in your tab and shows the extracted text plus the entry list — a quick read without LibreOffice.",
+  },
+  {
+    slug: "gz",
+    ext: "gz",
+    also: ["tgz", "tar", "zip"],
+    name: "Gzip (.gz)",
+    capability: "inspect",
+    group: "archive",
+    description:
+      "Open .gz files in your browser. Filelathe decompresses gzip locally and opens the inner file in the right viewer.",
+    blurb:
+      "Gzip wraps a single file. Filelathe decompresses it in your tab with the browser DecompressionStream and opens the result — text, JSON, or a tarball — in its own window.",
+  },
+  {
+    slug: "tar",
+    ext: "tar",
+    also: ["tgz", "gz", "zip"],
+    name: "Tar archive",
+    capability: "inspect",
+    group: "archive",
+    description:
+      "Open TAR files in your browser. List archive members and open any entry — parsing runs locally in your tab.",
+    blurb:
+      "Filelathe parses ustar/posix tar headers in the browser, lists members with sizes, samples small text files, and opens any entry in its own window. No upload, no extract-to-disk.",
+  },
+  {
+    slug: "tgz",
+    ext: "tgz",
+    also: ["tar", "gz", "zip"],
+    name: "Gzipped tar (.tar.gz / .tgz)",
+    capability: "inspect",
+    group: "archive",
+    description:
+      "Open .tar.gz / .tgz files in your browser. Filelathe gunzips then lists the tar members, all locally.",
+    blurb:
+      "Filelathe decompresses the gzip layer with DecompressionStream, then parses the tar inside, so you can browse a .tar.gz and open individual files without a terminal.",
   },
 ];
 

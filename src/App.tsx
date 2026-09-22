@@ -35,6 +35,7 @@ import {
 import { clearMediaPlayback, setMediaPlayback } from "./media-playback";
 import { MediaPlaybackProvider } from "./media-playback-context";
 import { getModule } from "./module-store";
+import { getArchive, setArchiveOpener } from "./archive-store";
 import { matchPlayers, plannedPlayer } from "./players";
 import { SavedSpecsPanel } from "./SavedSpecsPanel";
 import { useToast, ToastProvider } from "./toast";
@@ -226,8 +227,11 @@ export function App() {
             return live;
           });
           const usable = revived.filter((w) => {
-            if (w.file.kind !== "tracker") return true;
-            return getModule(w.file.moduleId) != null;
+            if (w.file.kind === "tracker")
+              return getModule(w.file.moduleId) != null;
+            if (w.file.kind === "archive")
+              return getArchive(w.file.archiveId) != null;
+            return true;
           });
           const dropped = revived.length - usable.length;
           setWindows(usable);
@@ -275,6 +279,7 @@ export function App() {
             activeId: activeIdRef.current,
             zTop: zTopRef.current,
             getModuleBytes: getModule,
+            getArchiveBytes: getArchive,
           });
           if (!cancelled) await saveSession(snapshot);
         } catch (error) {
@@ -296,6 +301,7 @@ export function App() {
         activeId: activeIdRef.current,
         zTop: zTopRef.current,
         getModuleBytes: getModule,
+        getArchiveBytes: getArchive,
       })
         .then(saveSession)
         .catch((error) => console.warn("[session] flush failed:", error));
@@ -878,6 +884,16 @@ export function App() {
     setWindows((prev) => [...prev, openedWindow]);
   }
 
+  const openFromFileRef = useRef<
+    (raw: File | undefined, source: Exclude<FileOpenSource, "url">) => void
+  >(() => undefined);
+
+  // ArchiveBrowser opens extracted entries through the normal drop path.
+  useEffect(() => {
+    setArchiveOpener((file) => openFromFileRef.current(file, "archive"));
+    return () => setArchiveOpener(null);
+  }, []);
+
   async function openFromFile(
     raw: File | undefined,
     source: Exclude<FileOpenSource, "url">,
@@ -909,6 +925,7 @@ export function App() {
       setBusyFlag(false);
     }
   }
+  openFromFileRef.current = openFromFile;
 
   async function openFromUrl(rawUrl: string) {
     if (!rawUrl.trim()) return;

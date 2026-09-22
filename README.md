@@ -56,7 +56,11 @@ Exceeded calls return `429` + `Retry-After`; the UI shows a toast. Missing Jev k
 drop / URL
     │
     ▼
-detect FileKind (image, pdf, csv, tracker, … or unknown)
+detect FileKind (image, pdf, csv, tracker, archive, … or unknown)
+    │
+    ├─ archive (zip/gzip/tar + odt/docx/xlsx/pptx/epub) → ArchiveBrowser
+    │        (list entries, peek document text, click-to-open an entry;
+    │         container bytes stay client-side, never sent to Jev)
     │
     ├─ known kind ──────────► Jev composes a Spec from catalog candidates
     │
@@ -119,6 +123,7 @@ Nothing is uploaded to a durable backend. Files live in the browser (and briefly
 | --- | --- | --- |
 | **IndexedDB** `jev-invented-specs` | Haiku-invented Specs (+ prompt), keyed by content hash and by extension+MIME | Persists in this browser until cleared (“Clear saved Specs” in the UI) |
 | **In-memory `Map`** (`module-store.ts`) | Tracker module `ArrayBuffer`s | Current page session only — never sent to Jev/compose |
+| **In-memory `Map`** (`archive-store.ts`) | Archive container `ArrayBuffer`s | Current page session only — never sent to Jev/compose (persisted in IndexedDB like trackers) |
 | **React state** (`App.tsx`) | Open windows, geometry, Specs | Until refresh / close |
 | **API request** | Bodies for `/api/compose`, `/api/invent-viewer`, `/api/fetch-resource` | Ephemeral; no disk write of user files |
 | **Upstash Redis** | Rate-limit counters | TTL ≈ window length |
@@ -149,6 +154,9 @@ Only Specs with `inventedBy: "haiku"` are reused from cache (not fallbacks). Pla
 | `api/*.js` | Bundled serverless routes (committed — Vercel discovers them before build) |
 | `src/server/` | Shared handlers, Upstash/memory rate limits |
 | `src/files.ts` | Kind detection, samples, hex preview |
+| `src/archive.ts` | Archive sniff (zip/gzip/tar), unzip/gunzip/untar, package peek, XML→text |
+| `src/archive-store.ts` | Session Map of archive bytes + click-to-open opener (client-only) |
+| `src/ArchiveBrowser.tsx` | Entry listing, extracted text, click-to-open, container hex |
 | `src/players.ts` | Host player / emulator registry (available vs planned) |
 | `src/route-unknown.ts` | Jev invent vs inspect |
 | `src/compose-lib.ts` | Orchestrates route → invent or Jev compose |

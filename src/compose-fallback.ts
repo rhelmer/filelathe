@@ -227,6 +227,40 @@ export function buildFallbackComposeSpec(
       );
     }
 
+    case "archive":
+      return {
+        root: "card",
+        elements: {
+          card: {
+            type: "Card",
+            props: {
+              title: null,
+              description: null,
+              maxWidth: "full",
+              centered: null,
+            },
+            children: ["browser"],
+          },
+          browser: {
+            type: "ArchiveBrowser",
+            props: {
+              archiveId: file.archiveId,
+              filename: file.filename,
+              mimeType: file.mimeType,
+              size: file.size,
+              format: file.format,
+              formatLabel: file.formatLabel,
+              entries: file.entries,
+              peekText: file.peekText,
+              peekXml: file.peekXml,
+              hexPreview: file.hexPreview,
+              note,
+            },
+            children: [],
+          },
+        },
+      };
+
     case "unknown":
       return {
         root: "card",

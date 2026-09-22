@@ -96,6 +96,26 @@ const samples: LoadedFile[] = [
     moduleTitle: "Demo Tune",
   },
   {
+    kind: "archive",
+    title: "Report",
+    filename: "report.docx",
+    mimeType:
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    size: 20480,
+    archiveId: "smoke-arc-1",
+    format: "docx",
+    formatLabel: "Word Document",
+    entries: [
+      { name: "[Content_Types].xml", size: 1312, isDir: false },
+      { name: "word/", size: 0, isDir: true },
+      { name: "word/document.xml", size: 4096, isDir: false },
+    ],
+    peekText: "Quarterly report\n\nRevenue grew 12% year over year.",
+    peekXml: "<w:document><w:body><w:p>Quarterly report</w:p></w:body></w:document>",
+    hexPreview:
+      "000000  50 4b 03 04 14 00 06 00 08 00 00 00 21 00 00 00  PK..........!...",
+  },
+  {
     kind: "unknown",
     title: "Mystery",
     filename: "mystery.bin",
@@ -158,6 +178,7 @@ for (const file of selected) {
     (file.kind !== "pdf" || types.includes("PdfViewer")) &&
     (file.kind !== "video" || types.includes("VideoPlayer")) &&
     (file.kind !== "tracker" || types.includes("TrackerPlayer")) &&
+    (file.kind !== "archive" || types.includes("ArchiveBrowser")) &&
     (file.kind !== "unknown" ||
       types.includes("InventedViewer") ||
       types.includes("BinaryInspector")) &&

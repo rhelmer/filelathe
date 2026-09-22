@@ -5,7 +5,7 @@ import { ApiRequestError } from "./api-error";
  * Never send filenames, sample text, hex, full URLs, or file contents.
  */
 
-export type FileOpenSource = "drop" | "picker" | "url";
+export type FileOpenSource = "drop" | "picker" | "url" | "archive";
 
 export type FileOpenFailReason =
   | "network"

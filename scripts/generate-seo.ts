@@ -279,6 +279,7 @@ function formatsHub() {
     data: "Data",
     web: "Web",
     config: "Config & inventable formats",
+    archive: "Archives & containers",
   };
 
   const sections = Object.entries(labels)
