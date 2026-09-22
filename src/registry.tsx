@@ -65,14 +65,14 @@ function BarGraph({
         {props.data.map((item) => (
           <div
             key={item.label}
-            className="flex flex-1 flex-col items-center gap-1"
+            className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1"
           >
             <div
-              className="w-full rounded-t-md bg-primary/80"
+              className="w-full min-h-[2px] rounded-t-md bg-primary/80"
               style={{ height: `${(item.value / max) * 100}%` }}
               title={`${item.label}: ${item.value}`}
             />
-            <span className="text-[10px] text-muted-foreground">
+            <span className="truncate text-[10px] text-muted-foreground">
               {item.label}
             </span>
           </div>
