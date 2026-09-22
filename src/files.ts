@@ -1,4 +1,14 @@
 import type { Spec } from "@json-render/core";
+import {
+  readArchive,
+  sniffArchiveFormat,
+  type ArchiveEntry,
+} from "./archive";
+import {
+  deleteArchive,
+  nextArchiveId,
+  putArchive,
+} from "./archive-store";
 import { buildInventPrompt } from "./invent-prompt";
 import { deleteModule, nextModuleId, putModule } from "./module-store";
 import { filenameFromUrl, toHexPreview, tryDecodeText } from "./resource-utils";
@@ -85,6 +95,25 @@ export type LoadedFile =
       format: string;
       channels: number | null;
       moduleTitle: string | null;
+    }
+  | {
+      kind: "archive";
+      title: string;
+      filename: string;
+      mimeType: string;
+      size: number;
+      archiveId: string;
+      /** Specific format id (zip, docx, odt, gzip, tar, tgz, …). */
+      format: string;
+      /** Human badge label. */
+      formatLabel: string;
+      entries: ArchiveEntry[];
+      /** Extracted plain-text preview (kept small; never raw bytes). */
+      peekText: string | null;
+      /** Short raw XML sample for ZIP packages. */
+      peekXml: string | null;
+      /** Hex preview of the container header only. */
+      hexPreview: string;
     }
   | {
       kind: "unknown";
@@ -548,9 +577,32 @@ export async function loadDroppedFile(file: File): Promise<LoadedFile> {
     };
   }
 
-  // Unknown: keep a small sample for Haiku / fallback Spec invent
+  // Unknown: read bytes once — first try compressed-container detection
+  // (magic bytes, then extension/MIME), else keep a sample for invent.
   const buffer = await file.arrayBuffer();
   const bytes = new Uint8Array(buffer);
+
+  const archiveFormat = sniffArchiveFormat(bytes, file.name, mimeType);
+  if (archiveFormat) {
+    const peek = await readArchive(bytes, archiveFormat, file.name);
+    const archiveId = nextArchiveId();
+    putArchive(archiveId, buffer);
+    return {
+      kind: "archive",
+      title,
+      filename: file.name,
+      mimeType,
+      size: file.size,
+      archiveId,
+      format: archiveFormat.id,
+      formatLabel: archiveFormat.label,
+      entries: peek.entries,
+      peekText: peek.peekText,
+      peekXml: peek.peekXml,
+      hexPreview: toHexPreview(bytes, 256),
+    };
+  }
+
   const sampleText = tryDecodeText(bytes.slice(0, 4000));
   const hexPreview = toHexPreview(bytes, 256);
   const inventInput = {
@@ -585,6 +637,9 @@ export function revokeLoadedFile(file: LoadedFile | null) {
   if (file.kind === "tracker") {
     deleteModule(file.moduleId);
   }
+  if (file.kind === "archive") {
+    deleteArchive(file.archiveId);
+  }
 }
 
 /** Internal prompt used by auto-compose (not shown to the user). */
@@ -610,6 +665,8 @@ export function promptForFile(file: LoadedFile): string {
       return "Show a PDF viewer for the loaded document";
     case "tracker":
       return "Show a tracker player for the loaded module";
+    case "archive":
+      return "Show the archive browser for the loaded container: list entries and extracted text";
     case "unknown":
       return "Show the invented catalog Spec viewer for this unrecognized resource";
   }
@@ -637,6 +694,8 @@ export function labelForKind(kind: FileKind) {
       return "PDF viewer";
     case "tracker":
       return "Tracker player";
+    case "archive":
+      return "Archive";
     case "unknown":
       return "Invented Spec";
   }

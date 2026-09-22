@@ -25,6 +25,7 @@ import {
   saveSession,
 } from "./session-store";
 import { getModule } from "./module-store";
+import { getArchive, setArchiveOpener } from "./archive-store";
 import { matchPlayers, plannedPlayer } from "./players";
 import { SavedSpecsPanel } from "./SavedSpecsPanel";
 import { useToast, ToastProvider } from "./toast";
@@ -162,8 +163,11 @@ export function App() {
             return live;
           });
           const usable = revived.filter((w) => {
-            if (w.file.kind !== "tracker") return true;
-            return getModule(w.file.moduleId) != null;
+            if (w.file.kind === "tracker")
+              return getModule(w.file.moduleId) != null;
+            if (w.file.kind === "archive")
+              return getArchive(w.file.archiveId) != null;
+            return true;
           });
           const dropped = revived.length - usable.length;
           setWindows(usable);
@@ -211,6 +215,7 @@ export function App() {
             activeId: activeIdRef.current,
             zTop: zTopRef.current,
             getModuleBytes: getModule,
+            getArchiveBytes: getArchive,
           });
           if (!cancelled) await saveSession(snapshot);
         } catch (error) {
@@ -232,6 +237,7 @@ export function App() {
         activeId: activeIdRef.current,
         zTop: zTopRef.current,
         getModuleBytes: getModule,
+        getArchiveBytes: getArchive,
       })
         .then(saveSession)
         .catch((error) => console.warn("[session] flush failed:", error));
@@ -584,6 +590,16 @@ export function App() {
     });
   }
 
+  const openFromFileRef = useRef<(raw: File | undefined) => void>(
+    () => undefined,
+  );
+
+  // ArchiveBrowser opens extracted entries through the normal drop path.
+  useEffect(() => {
+    setArchiveOpener((file) => openFromFileRef.current(file));
+    return () => setArchiveOpener(null);
+  }, []);
+
   async function openFromFile(raw: File | undefined) {
     if (!raw) return; // picker cancel — stay quiet
     if (busyRef.current) {
@@ -607,6 +623,7 @@ export function App() {
       setBusyFlag(false);
     }
   }
+  openFromFileRef.current = openFromFile;
 
   async function openFromUrl(rawUrl: string) {
     if (!rawUrl.trim()) return;

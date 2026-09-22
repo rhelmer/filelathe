@@ -35,6 +35,7 @@ export function buildFileCandidates(file: LoadedFile): Candidate[] {
     file.kind === "video" ||
     file.kind === "pdf" ||
     file.kind === "tracker" ||
+    file.kind === "archive" ||
     file.kind === "csv";
 
   add(
@@ -209,6 +210,28 @@ export function buildFileCandidates(file: LoadedFile): Candidate[] {
     );
   }
 
+  if (file.kind === "archive") {
+    add(
+      "archive_browser",
+      `ArchiveBrowser: entry listing + extracted text for the ${file.formatLabel} container ${JSON.stringify(file.filename)} (${file.entries.length} entries). Always include for archives; never invent this.`,
+      "ArchiveBrowser",
+      {
+        archiveId: file.archiveId,
+        filename: file.filename,
+        mimeType: file.mimeType,
+        size: file.size,
+        format: file.format,
+        formatLabel: file.formatLabel,
+        entries: file.entries,
+        peekText: file.peekText,
+        peekXml: file.peekXml,
+        hexPreview: file.hexPreview,
+        note: null,
+      },
+      "data:archive",
+    );
+  }
+
   if (file.kind === "unknown") {
     add(
       "invented",
@@ -350,6 +373,16 @@ export function stateForFile(file: LoadedFile) {
   if (file.kind === "csv") {
     base.file.columns = file.columns;
     base.file.rows = file.rows;
+  }
+  if (file.kind === "archive") {
+    base.file.archiveId = file.archiveId;
+    base.file.format = file.format;
+    base.file.formatLabel = file.formatLabel;
+    base.file.size = file.size;
+    base.file.entries = file.entries;
+    base.file.peekText = file.peekText;
+    base.file.peekXml = file.peekXml;
+    base.file.hexPreview = file.hexPreview;
   }
   if (file.kind === "unknown") {
     base.file.size = file.size;

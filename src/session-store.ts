@@ -4,6 +4,7 @@
  */
 
 import type { Spec } from "@json-render/core";
+import { putArchive } from "./archive-store";
 import { stateForFile } from "./file-candidates";
 import type { LoadedFile } from "./files";
 import { putModule } from "./module-store";
@@ -21,6 +22,8 @@ export type SessionWindow = {
   mediaBytes: ArrayBuffer | null;
   /** Tracker module payload (module-store is in-memory only). */
   moduleBytes: ArrayBuffer | null;
+  /** Archive container payload (archive-store is in-memory only). */
+  archiveBytes: ArrayBuffer | null;
   spec: Spec;
   prompt: string;
   x: number;
@@ -111,6 +114,7 @@ function stripEphemeralSrc(file: LoadedFile): LoadedFile {
 export async function serializeWindow(
   item: LiveWindow,
   moduleBytes: ArrayBuffer | null | undefined,
+  archiveBytes: ArrayBuffer | null | undefined,
 ): Promise<SessionWindow> {
   const mediaBytes = await readMediaBytes(item.file);
   return {
@@ -120,6 +124,10 @@ export async function serializeWindow(
     moduleBytes:
       item.file.kind === "tracker"
         ? (moduleBytes ?? null)
+        : null,
+    archiveBytes:
+      item.file.kind === "archive"
+        ? (archiveBytes ?? null)
         : null,
     spec: item.spec,
     prompt: item.prompt,
@@ -150,6 +158,10 @@ export function reviveWindow(stored: SessionWindow): LiveWindow {
 
   if (file.kind === "tracker" && stored.moduleBytes) {
     putModule(file.moduleId, stored.moduleBytes);
+  }
+
+  if (file.kind === "archive" && stored.archiveBytes) {
+    putArchive(file.archiveId, stored.archiveBytes);
   }
 
   const spec = structuredClone(stored.spec) as Spec;
@@ -228,6 +240,7 @@ export async function buildSessionSnapshot(input: {
   activeId: string | null;
   zTop: number;
   getModuleBytes: (moduleId: string) => ArrayBuffer | undefined;
+  getArchiveBytes: (archiveId: string) => ArrayBuffer | undefined;
 }): Promise<SessionSnapshot> {
   const windows: SessionWindow[] = [];
   for (const item of input.windows) {
@@ -235,7 +248,11 @@ export async function buildSessionSnapshot(input: {
       item.file.kind === "tracker"
         ? input.getModuleBytes(item.file.moduleId) ?? null
         : null;
-    windows.push(await serializeWindow(item, moduleBytes));
+    const archiveBytes =
+      item.file.kind === "archive"
+        ? input.getArchiveBytes(item.file.archiveId) ?? null
+        : null;
+    windows.push(await serializeWindow(item, moduleBytes, archiveBytes));
   }
   return {
     version: 1,

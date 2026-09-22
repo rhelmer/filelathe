@@ -104,6 +104,29 @@ const dashboardExtras = {
     description:
       "Hex/metadata inspector for opaque binaries and for formats whose emulator is planned but not wired. Never a fake emulator.",
   },
+  ArchiveBrowser: {
+    props: z.object({
+      archiveId: z.string(),
+      filename: z.string(),
+      mimeType: z.string(),
+      size: z.number(),
+      format: z.string(),
+      formatLabel: z.string(),
+      entries: z.array(
+        z.object({
+          name: z.string(),
+          size: z.number(),
+          isDir: z.boolean(),
+        }),
+      ),
+      peekText: z.string().nullable(),
+      peekXml: z.string().nullable(),
+      hexPreview: z.string(),
+      note: z.string().nullable(),
+    }),
+    description:
+      "Browser for compressed containers (ZIP/ODT/DOCX/XLSX/PPTX/EPUB/gzip/tar): entry listing, extracted document text, click-to-open an entry as its own window. Container bytes stay client-side; never invent this.",
+  },
   InventedViewer: {
     props: z.object({
       /**
