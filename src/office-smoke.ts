@@ -110,6 +110,49 @@ console.log("promote .xls → spreadsheet");
   }
 }
 
+console.log("promote .pptx → slides");
+{
+  const { readFileSync } = await import("node:fs");
+  const pptx = new Uint8Array(
+    readFileSync("/tmp/filelathe-fixtures/demo-deck.pptx"),
+  );
+  const format = sniffArchiveFormat(
+    pptx,
+    "demo-deck.pptx",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  );
+  check("sniff pptx", format?.id === "pptx", format?.id ?? "null");
+  const promoted = await promoteOfficeFormat(pptx, format!);
+  check("kind slides", promoted?.kind === "slides", promoted?.kind);
+}
+
+console.log("xlsx charts");
+{
+  const { readFileSync } = await import("node:fs");
+  const { extractXlsxCharts } = await import("./office");
+  const xlsx = new Uint8Array(
+    readFileSync("/tmp/filelathe-fixtures/charted-book.xlsx"),
+  );
+  const charts = extractXlsxCharts(xlsx);
+  check("found chart", charts.length >= 1, String(charts.length));
+  check(
+    "chart has Widgets",
+    Boolean(charts[0]?.data.some((d) => d.label === "Widgets" && d.value === 10)),
+    JSON.stringify(charts[0]),
+  );
+  const format = sniffArchiveFormat(
+    xlsx,
+    "charted-book.xlsx",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  );
+  const promoted = await promoteOfficeFormat(xlsx, format!);
+  check(
+    "promoted csv includes charts",
+    promoted?.kind === "csv" && Boolean(promoted.charts?.length),
+    promoted?.kind === "csv" ? String(promoted.charts?.length) : promoted?.kind,
+  );
+}
+
 console.log("proseToMarkdown");
 {
   const md = proseToMarkdown("Hello\n\nWorld\nline");

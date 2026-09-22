@@ -106,6 +106,25 @@ export function buildFallbackComposeSpec(
         { note: alertNote("note", note) },
       );
 
+    case "slides":
+      return cardWith(
+        "slides",
+        {
+          type: "SlideViewer",
+          props: {
+            src: { $state: "/file/src" },
+            title: null,
+            filename: file.filename,
+            format: file.format,
+            note,
+          },
+          children: [],
+        },
+        state,
+        undefined,
+        { maxWidth: "full", centered: null },
+      );
+
     case "image":
       return cardWith(
         "editor",
@@ -139,7 +158,19 @@ export function buildFallbackComposeSpec(
         { note: alertNote("note", note) },
       );
 
-    case "csv":
+    case "csv": {
+      const charts = file.charts ?? [];
+      const chartExtras: Spec["elements"] = {};
+      charts.slice(0, 4).forEach((chart, i) => {
+        chartExtras[`chart${i}`] = {
+          type: "BarGraph",
+          props: {
+            title: chart.title,
+            data: chart.data,
+          },
+          children: [],
+        };
+      });
       return cardWith(
         "sheet",
         {
@@ -152,8 +183,13 @@ export function buildFallbackComposeSpec(
           children: [],
         },
         state,
-        { note: alertNote("note", note) },
+        {
+          note: alertNote("note", note),
+          ...chartExtras,
+        },
+        { maxWidth: "full", centered: null },
       );
+    }
 
     case "markdown":
       return cardWith(

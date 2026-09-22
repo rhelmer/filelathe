@@ -34,6 +34,7 @@ export function buildFileCandidates(file: LoadedFile): Candidate[] {
     file.kind === "image" ||
     file.kind === "video" ||
     file.kind === "pdf" ||
+    file.kind === "slides" ||
     file.kind === "tracker" ||
     file.kind === "archive" ||
     file.kind === "csv";
@@ -114,6 +115,22 @@ export function buildFileCandidates(file: LoadedFile): Candidate[] {
         title: null,
       },
       "data:pdf",
+    );
+  }
+
+  if (file.kind === "slides") {
+    add(
+      "slide_viewer",
+      `SlideViewer: canvas PPTX renderer for ${JSON.stringify(file.filename)} (${file.format}). Always include for presentation files; never invent this.`,
+      "SlideViewer",
+      {
+        src: { $state: "/file/src" },
+        title: null,
+        filename: file.filename,
+        format: file.format,
+        note: null,
+      },
+      "data:slides",
     );
   }
 
@@ -208,6 +225,18 @@ export function buildFileCandidates(file: LoadedFile): Candidate[] {
       },
       "data:spreadsheet",
     );
+    (file.charts ?? []).slice(0, 4).forEach((chart, i) => {
+      add(
+        `chart_${i}`,
+        `BarGraph: chart series ${JSON.stringify(chart.title ?? `Chart ${i + 1}`)} extracted from the workbook.`,
+        "BarGraph",
+        {
+          title: chart.title,
+          data: chart.data,
+        },
+        "data:chart",
+      );
+    });
   }
 
   if (file.kind === "archive") {
@@ -373,6 +402,11 @@ export function stateForFile(file: LoadedFile) {
   if (file.kind === "csv") {
     base.file.columns = file.columns;
     base.file.rows = file.rows;
+    if (file.charts?.length) base.file.charts = file.charts;
+  }
+  if (file.kind === "slides") {
+    base.file.src = file.src;
+    base.file.format = file.format;
   }
   if (file.kind === "archive") {
     base.file.archiveId = file.archiveId;

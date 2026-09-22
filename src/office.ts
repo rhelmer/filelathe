@@ -10,6 +10,7 @@
  * caller can keep the archive inspector path.
  */
 import * as CFB from "cfb";
+import { unzipSync } from "fflate";
 import * as XLSX from "xlsx";
 import {
   type ArchiveFormat,
@@ -20,9 +21,19 @@ import {
 const MAX_DOC_CHARS = 100_000;
 const MAX_SHEET_ROWS = 100;
 const MAX_SHEET_COLS = 40;
+const MAX_DOC_IMAGES = 8;
+const MAX_IMAGE_BYTES = 600_000;
+const MAX_CHARTS = 4;
 
 const DOCUMENT_FORMATS = new Set(["doc", "docx", "odt"]);
 const SHEET_FORMATS = new Set(["xls", "xlsx", "ods"]);
+/** pptx-wasm renders OOXML decks; classic .ppt stays on ArchiveBrowser. */
+const SLIDE_FORMATS = new Set(["pptx"]);
+
+export type SheetChart = {
+  title: string | null;
+  data: Array<{ label: string; value: number }>;
+};
 
 function readU16(bytes: Uint8Array, offset: number): number {
   return bytes[offset]! | (bytes[offset + 1]! << 8);
@@ -223,10 +234,77 @@ export async function extractDocumentMarkdown(
 
   if (format.id === "docx" || format.id === "odt") {
     const peek = await readArchive(bytes, format, `peek.${format.id}`);
-    return peek.peekText ? proseToMarkdown(peek.peekText) : null;
+    let markdown = peek.peekText ? proseToMarkdown(peek.peekText) : null;
+    if (format.id === "docx") {
+      const images = extractZipPackageImages(bytes, "word/media/");
+      if (images.length) {
+        const gallery = images
+          .map((img, i) => `![Embedded image ${i + 1}](${img.dataUrl})`)
+          .join("\n\n");
+        markdown = markdown
+          ? `${markdown}\n\n---\n\n${gallery}`
+          : gallery;
+      }
+    }
+    return markdown;
   }
 
   return null;
+}
+
+function mimeForImageName(name: string): string {
+  const ext = name.toLowerCase().match(/\.([^.]+)$/)?.[1] ?? "";
+  if (ext === "png") return "image/png";
+  if (ext === "jpg" || ext === "jpeg") return "image/jpeg";
+  if (ext === "gif") return "image/gif";
+  if (ext === "webp") return "image/webp";
+  if (ext === "bmp") return "image/bmp";
+  if (ext === "svg") return "image/svg+xml";
+  return "application/octet-stream";
+}
+
+function bytesToDataUrl(bytes: Uint8Array, mime: string): string {
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return `data:${mime};base64,${btoa(binary)}`;
+}
+
+/** Pull raster/SVG images from an OOXML package media folder. */
+export function extractZipPackageImages(
+  bytes: Uint8Array,
+  mediaPrefix: string,
+): Array<{ name: string; dataUrl: string }> {
+  try {
+    const files = unzipSync(bytes, {
+      filter: (info) =>
+        info.name.startsWith(mediaPrefix) &&
+        !info.name.endsWith("/") &&
+        info.originalSize > 0 &&
+        info.originalSize <= MAX_IMAGE_BYTES,
+    });
+    const out: Array<{ name: string; dataUrl: string }> = [];
+    for (const name of Object.keys(files).sort()) {
+      if (out.length >= MAX_DOC_IMAGES) break;
+      const data = files[name];
+      if (!data?.length) continue;
+      const mime = mimeForImageName(name);
+      if (mime === "application/octet-stream") continue;
+      out.push({
+        name: name.slice(mediaPrefix.length) || name,
+        dataUrl: bytesToDataUrl(data, mime),
+      });
+    }
+    return out;
+  } catch (error) {
+    console.warn(
+      "[office] media extract failed:",
+      error instanceof Error ? error.message : error,
+    );
+    return [];
+  }
 }
 
 function cellString(value: unknown): string {
@@ -311,6 +389,102 @@ function colLabel(index: number): string {
   return label;
 }
 
+function decodeUtf8(bytes: Uint8Array | undefined): string | null {
+  if (!bytes) return null;
+  try {
+    return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+  } catch {
+    return null;
+  }
+}
+
+function parseChartCachePoints(xml: string, tag: "strCache" | "numCache"): string[] {
+  const block = xml.match(
+    new RegExp(`<c:${tag}\\b[\\s\\S]*?<\\/c:${tag}>`, "i"),
+  )?.[0];
+  if (!block) return [];
+  const values: string[] = [];
+  const re = /<c:pt\b[^>]*>[\s\S]*?<c:v>([\s\S]*?)<\/c:v>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(block))) {
+    values.push(m[1]!.replace(/<!\[CDATA\[|\]\]>/g, "").trim());
+  }
+  return values;
+}
+
+function parseChartTitle(xml: string): string | null {
+  const titled = xml.match(
+    /<c:title\b[\s\S]*?<a:t>([\s\S]*?)<\/a:t>/i,
+  )?.[1];
+  if (titled?.trim()) return titled.trim();
+  return null;
+}
+
+function parseFirstSeries(xml: string): {
+  labels: string[];
+  values: number[];
+} | null {
+  const ser = xml.match(/<c:ser\b[\s\S]*?<\/c:ser>/i)?.[0];
+  if (!ser) return null;
+  const cat = ser.match(/<c:cat\b[\s\S]*?<\/c:cat>/i)?.[0] ?? "";
+  const val = ser.match(/<c:val\b[\s\S]*?<\/c:val>/i)?.[0] ?? "";
+  const labels =
+    parseChartCachePoints(cat, "strCache").length > 0
+      ? parseChartCachePoints(cat, "strCache")
+      : parseChartCachePoints(cat, "numCache");
+  const values = parseChartCachePoints(val, "numCache")
+    .map((v) => Number(v))
+    .filter((n) => Number.isFinite(n));
+  if (!values.length) return null;
+  return { labels, values };
+}
+
+/**
+ * Best-effort XLSX chart extraction: read xl/charts/chart*.xml caches into
+ * BarGraph-friendly {label,value} series (first series only per chart).
+ */
+export function extractXlsxCharts(bytes: Uint8Array): SheetChart[] {
+  try {
+    const files = unzipSync(bytes, {
+      filter: (info) =>
+        /^xl\/charts\/chart\d+\.xml$/i.test(info.name) &&
+        info.originalSize > 0 &&
+        info.originalSize <= 2_000_000,
+    });
+    const charts: SheetChart[] = [];
+    for (const name of Object.keys(files).sort()) {
+      if (charts.length >= MAX_CHARTS) break;
+      const xml = decodeUtf8(files[name]);
+      if (!xml) continue;
+      const series = parseFirstSeries(xml);
+      if (!series) continue;
+      const data: Array<{ label: string; value: number }> = [];
+      const n = Math.min(
+        Math.max(series.labels.length, series.values.length),
+        24,
+      );
+      for (let i = 0; i < n; i++) {
+        data.push({
+          label: series.labels[i]?.trim() || colLabel(i),
+          value: series.values[i] ?? 0,
+        });
+      }
+      if (!data.length) continue;
+      charts.push({
+        title: parseChartTitle(xml) ?? name.split("/").pop() ?? "Chart",
+        data,
+      });
+    }
+    return charts;
+  } catch (error) {
+    console.warn(
+      "[office] chart extract failed:",
+      error instanceof Error ? error.message : error,
+    );
+    return [];
+  }
+}
+
 export type OfficePromotion =
   | {
       kind: "markdown";
@@ -321,17 +495,42 @@ export type OfficePromotion =
       kind: "csv";
       columns: string[];
       rows: string[][];
+      charts?: SheetChart[];
+      mimeType: string;
+    }
+  | {
+      kind: "slides";
+      format: string;
       mimeType: string;
     };
 
 /**
- * Try to promote an archive/OLE Office format into markdown or spreadsheet.
- * Returns null to keep the ArchiveBrowser path (zip listing, ppt, etc.).
+ * Try to promote an archive/OLE Office format into markdown, spreadsheet, or
+ * slides. Returns null to keep the ArchiveBrowser path (zip listing, classic
+ * .ppt, etc.).
  */
 export async function promoteOfficeFormat(
   bytes: Uint8Array,
   format: ArchiveFormat,
 ): Promise<OfficePromotion | null> {
+  if (SLIDE_FORMATS.has(format.id)) {
+    // Validate ZIP + at least one slide part before handing to pptx-wasm.
+    try {
+      const files = unzipSync(bytes, {
+        filter: (info) => /^ppt\/slides\/slide\d+\.xml$/i.test(info.name),
+      });
+      if (!Object.keys(files).length) return null;
+    } catch {
+      return null;
+    }
+    return {
+      kind: "slides",
+      format: format.id,
+      mimeType:
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    };
+  }
+
   if (DOCUMENT_FORMATS.has(format.id)) {
     const markdown = await extractDocumentMarkdown(bytes, format);
     if (!markdown?.trim()) return null;
@@ -352,10 +551,13 @@ export async function promoteOfficeFormat(
     if (!grid || (!grid.rows.length && !grid.columns.some((c) => c.trim()))) {
       return null;
     }
+    const charts =
+      format.id === "xlsx" ? extractXlsxCharts(bytes) : undefined;
     return {
       kind: "csv",
       columns: grid.columns,
       rows: grid.rows,
+      charts: charts?.length ? charts : undefined,
       mimeType:
         format.id === "xls"
           ? "application/vnd.ms-excel"
@@ -374,4 +576,8 @@ export function isDocumentOfficeFormat(id: string): boolean {
 
 export function isSheetOfficeFormat(id: string): boolean {
   return SHEET_FORMATS.has(id);
+}
+
+export function isSlideOfficeFormat(id: string): boolean {
+  return SLIDE_FORMATS.has(id);
 }

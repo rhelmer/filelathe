@@ -8,6 +8,7 @@ import { InventedViewer } from "./InventedViewer";
 import { MarkdownView } from "./MarkdownView";
 import { PdfViewer, VideoPlayer } from "./PdfVideo";
 import { PixelEditor } from "./PixelEditor";
+import { SlideViewer } from "./SlideViewer";
 import { Spreadsheet } from "./Spreadsheet";
 import { TrackerPlayer } from "./TrackerPlayer";
 import { usePersistedMedia } from "./use-persisted-media";
@@ -126,6 +127,7 @@ export const { registry } = defineRegistry(catalog, {
     PixelEditor,
     Spreadsheet,
     PdfViewer,
+    SlideViewer,
     VideoPlayer,
     TrackerPlayer,
     MarkdownView,

@@ -650,7 +650,7 @@ export function buildInventPrompt(input: InventInput): string {
     customRules: [
       `Only use these components: ${inventCatalog.componentNames.join(", ")}.`,
       "Never invent an emulator, CPU, disk controller, ROM runner, or game console.",
-      "Never use InventedViewer, BinaryInspector, AudioPlayer, VideoPlayer, PdfViewer, PixelEditor, TrackerPlayer, Spreadsheet, or WebPageViewer.",
+      "Never use InventedViewer, BinaryInspector, AudioPlayer, VideoPlayer, PdfViewer, SlideViewer, PixelEditor, TrackerPlayer, Spreadsheet, or WebPageViewer.",
       "Put derived explanation in state.summary (Markdown) and file body in state.body; bind MarkdownView→/summary and Textarea→/body. Every $bindState/$state path MUST exist in top-level state with real values from ANALYSIS / sample.",
       'Example state: {"activeTab":"overview","summary":"## …","body":"…"}.',
       "Preferred panes: Overview (what it is + checks) | Structure or Highlights (Metrics/Badges/Alerts) | Source (editable Textarea). Hex ONLY when ANALYSIS says binary / no text.",

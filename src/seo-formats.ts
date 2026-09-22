@@ -601,7 +601,7 @@ export const SEO_FORMATS: SeoFormat[] = [
     description:
       "Open DOCX files in your browser. Filelathe extracts the document text and opens it in the document viewer — no Office install.",
     blurb:
-      "DOCX is a ZIP package. Filelathe reads word/document.xml locally, strips the XML to readable prose, and shows it in the Markdown document viewer so you can read a Word file without uploading it.",
+      "DOCX is a ZIP package. Filelathe reads word/document.xml locally, strips the XML to readable prose, embeds word/media images when present, and shows the result in the Markdown document viewer.",
   },
   {
     slug: "odt",
@@ -649,7 +649,31 @@ export const SEO_FORMATS: SeoFormat[] = [
     description:
       "Open classic .ppt decks in your browser. Filelathe lists OLE streams and peeks recoverable slide text locally.",
     blurb:
-      "PowerPoint 97–2003 files are OLE Compound Files. Filelathe sniffs the container, lists streams such as PowerPoint Document, and shows a text peek without uploading the file.",
+      "PowerPoint 97–2003 files are OLE Compound Files. Filelathe sniffs the container and lists streams such as PowerPoint Document. For full slide graphics, use .pptx — Filelathe renders modern decks with pptx-wasm.",
+  },
+  {
+    slug: "pptx",
+    ext: "pptx",
+    also: ["ppt", "odp", "docx", "xlsx"],
+    name: "PowerPoint (PPTX)",
+    capability: "view",
+    group: "archive",
+    description:
+      "Open PPTX decks in your browser with a canvas slide viewer — shapes, images, and charts render locally.",
+    blurb:
+      "Filelathe opens .pptx with pptx-wasm in your tab: navigate slides, see charts and images, and keep the file on-device. No Office install and no upload.",
+  },
+  {
+    slug: "xlsx",
+    ext: "xlsx",
+    also: ["xls", "ods", "csv", "pptx"],
+    name: "Excel workbook (XLSX)",
+    capability: "view",
+    group: "archive",
+    description:
+      "Open XLSX workbooks as an editable spreadsheet grid, with embedded charts shown as bar graphs when chart caches are present.",
+    blurb:
+      "Filelathe parses the workbook locally, opens the first sheet in the Spreadsheet editor, and surfaces xl/charts data as BarGraph widgets when DrawingML chart caches are available.",
   },
   {
     slug: "gz",

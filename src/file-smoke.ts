@@ -76,6 +76,15 @@ const samples: LoadedFile[] = [
     src: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
   },
   {
+    kind: "slides",
+    title: "Kickoff",
+    filename: "kickoff.pptx",
+    mimeType:
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    src: "blob:smoke-pptx",
+    format: "pptx",
+  },
+  {
     kind: "video",
     title: "Clip",
     filename: "clip.mp4",
@@ -176,6 +185,7 @@ for (const file of selected) {
     (file.kind !== "markdown" || types.includes("MarkdownView")) &&
     (file.kind !== "webpage" || types.includes("WebPageViewer")) &&
     (file.kind !== "pdf" || types.includes("PdfViewer")) &&
+    (file.kind !== "slides" || types.includes("SlideViewer")) &&
     (file.kind !== "video" || types.includes("VideoPlayer")) &&
     (file.kind !== "tracker" || types.includes("TrackerPlayer")) &&
     (file.kind !== "archive" || types.includes("ArchiveBrowser")) &&

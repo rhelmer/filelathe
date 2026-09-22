@@ -265,6 +265,7 @@ const FORBIDDEN_TYPES = new Set([
   "AudioPlayer",
   "VideoPlayer",
   "PdfViewer",
+  "SlideViewer",
   "PixelEditor",
   "TrackerPlayer",
   "Spreadsheet",
