@@ -14,8 +14,9 @@
     "file-smoke": "tsx --env-file=.env src/file-smoke.ts",
     "invent-smoke": "tsx src/invent-smoke.ts",
     "archive-smoke": "tsx src/archive-smoke.ts",
+    "office-smoke": "tsx src/office-smoke.ts",
     "check-types": "tsc --noEmit",
-    "verify": "pnpm check-types && pnpm invent-smoke && pnpm archive-smoke && pnpm build",
+    "verify": "pnpm check-types && pnpm invent-smoke && pnpm archive-smoke && pnpm office-smoke && pnpm build",
     "demo:capture": "node scripts/social-media/capture-filelathe-demo.mjs"
   },
   "dependencies": {
@@ -33,12 +34,14 @@
     "clsx": "^2.1.1",
     "fflate": "^0.8.3",
     "lucide-react": "^0.564.0",
+    "pptx-wasm": "^0.3.0",
     "radix-ui": "^1.4.3",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-markdown": "10.1.0",
     "remark-gfm": "4.0.1",
     "tailwind-merge": "^3.4.1",
+    "xlsx": "^0.18.5",
     "zod": "4.3.6"
   },
   "devDependencies": {

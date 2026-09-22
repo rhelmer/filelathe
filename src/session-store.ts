@@ -92,12 +92,16 @@ function idbReq<T>(request: IDBRequest<T>): Promise<T> {
 
 function isBlobMedia(
   file: LoadedFile,
-): file is LoadedFile & { src: string; kind: "audio" | "image" | "video" | "pdf" } {
+): file is LoadedFile & {
+  src: string;
+  kind: "audio" | "image" | "video" | "pdf" | "slides";
+} {
   return (
     (file.kind === "audio" ||
       file.kind === "image" ||
       file.kind === "video" ||
-      file.kind === "pdf") &&
+      file.kind === "pdf" ||
+      file.kind === "slides") &&
     typeof file.src === "string"
   );
 }
@@ -158,7 +162,8 @@ export function reviveWindow(stored: SessionWindow): LiveWindow {
     (file.kind === "audio" ||
       file.kind === "image" ||
       file.kind === "video" ||
-      file.kind === "pdf")
+      file.kind === "pdf" ||
+      file.kind === "slides")
   ) {
     const blob = new Blob([stored.mediaBytes], { type: file.mimeType });
     file = { ...file, src: URL.createObjectURL(blob) };

@@ -57,6 +57,17 @@ const dashboardExtras = {
     }),
     description: "Embedded PDF viewer with open-in-new-tab link",
   },
+  SlideViewer: {
+    props: z.object({
+      src: z.string(),
+      title: z.string().nullable(),
+      filename: z.string(),
+      format: z.string(),
+      note: z.string().nullable(),
+    }),
+    description:
+      "Client-side PPTX slide renderer (pptx-wasm): canvas slides with charts, images, and shapes. Classic .ppt stays on ArchiveBrowser. Never invent this.",
+  },
   VideoPlayer: {
     props: z.object({
       src: z.string(),

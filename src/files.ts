@@ -11,6 +11,7 @@ import {
 } from "./archive-store";
 import { buildInventPrompt } from "./invent-prompt";
 import { deleteModule, nextModuleId, putModule } from "./module-store";
+import { promoteOfficeFormat } from "./office";
 import { filenameFromUrl, toHexPreview, tryDecodeText } from "./resource-utils";
 
 /** Normalized payload produced from a dropped/selected file. */
@@ -46,6 +47,8 @@ export type LoadedFile =
       mimeType: string;
       columns: string[];
       rows: string[][];
+      /** Optional charts extracted from XLSX DrawingML (client-side). */
+      charts?: Array<{ title: string | null; data: Array<{ label: string; value: number }> }>;
     }
   | {
       kind: "text";
@@ -85,6 +88,15 @@ export type LoadedFile =
       filename: string;
       mimeType: string;
       src: string;
+    }
+  | {
+      kind: "slides";
+      title: string;
+      filename: string;
+      mimeType: string;
+      /** Blob URL for the .pptx package (pptx-wasm renders client-side). */
+      src: string;
+      format: string;
     }
   | {
       kind: "tracker";
@@ -600,6 +612,42 @@ export async function loadDroppedFile(file: File): Promise<LoadedFile> {
 
   const archiveFormat = sniffArchiveFormat(bytes, file.name, mimeType);
   if (archiveFormat) {
+    // Documents/sheets → same viewers as markdown / CSV when we can extract.
+    const promoted = await promoteOfficeFormat(bytes, archiveFormat);
+    if (promoted?.kind === "markdown") {
+      return {
+        kind: "markdown",
+        title,
+        filename: file.name,
+        mimeType: promoted.mimeType || mimeType,
+        markdown: promoted.markdown,
+      };
+    }
+    if (promoted?.kind === "csv") {
+      return {
+        kind: "csv",
+        title,
+        filename: file.name,
+        mimeType: promoted.mimeType || mimeType,
+        columns: promoted.columns,
+        rows: promoted.rows,
+        charts: promoted.charts,
+      };
+    }
+    if (promoted?.kind === "slides") {
+      const src = URL.createObjectURL(
+        new Blob([bytes as BlobPart], { type: promoted.mimeType }),
+      );
+      return {
+        kind: "slides",
+        title,
+        filename: file.name,
+        mimeType: promoted.mimeType || mimeType,
+        src,
+        format: promoted.format,
+      };
+    }
+
     const peek = await readArchive(bytes, archiveFormat, file.name);
     const archiveId = nextArchiveId();
     putArchive(archiveId, buffer);
@@ -645,7 +693,8 @@ export function revokeLoadedFile(file: LoadedFile | null) {
     (file.kind === "audio" ||
       file.kind === "image" ||
       file.kind === "video" ||
-      file.kind === "pdf") &&
+      file.kind === "pdf" ||
+      file.kind === "slides") &&
     file.src.startsWith("blob:")
   ) {
     URL.revokeObjectURL(file.src);
@@ -668,17 +717,19 @@ export function promptForFile(file: LoadedFile): string {
     case "json":
       return "Create an editor form for the loaded record fields with Save changes";
     case "csv":
-      return "Show a spreadsheet editor for the loaded CSV";
+      return "Show a spreadsheet editor for the loaded sheet";
     case "text":
       return "Show the loaded document text";
     case "markdown":
-      return "Show the rendered Markdown document only";
+      return "Show the rendered document only";
     case "webpage":
       return "Show the webpage snapshot viewer for the fetched HTML";
     case "video":
       return "Show a video player for the loaded clip";
     case "pdf":
       return "Show a PDF viewer for the loaded document";
+    case "slides":
+      return "Show the slide viewer for the loaded presentation";
     case "tracker":
       return "Show a tracker player for the loaded module";
     case "archive":
@@ -708,6 +759,8 @@ export function labelForKind(kind: FileKind) {
       return "Video player";
     case "pdf":
       return "PDF viewer";
+    case "slides":
+      return "Slides";
     case "tracker":
       return "Tracker player";
     case "archive":

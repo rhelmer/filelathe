@@ -58,6 +58,7 @@ export default defineConfig({
   plugins: [react(), tailwindcss(), chiptuneLibopenmptAsset()],
   root: ".",
   clearScreen: false,
+  assetsInclude: ["**/*.wasm"],
   build: {
     outDir: "dist",
     emptyOutDir: true,
@@ -69,7 +70,7 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    exclude: ["chiptune3"],
+    exclude: ["chiptune3", "pptx-wasm"],
   },
   worker: {
     format: "es",

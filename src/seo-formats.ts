@@ -599,9 +599,9 @@ export const SEO_FORMATS: SeoFormat[] = [
     capability: "view",
     group: "archive",
     description:
-      "Open DOCX files in your browser. Filelathe extracts the document text and lists the package parts — no Office install.",
+      "Open DOCX files in your browser. Filelathe extracts the document text and opens it in the document viewer — no Office install.",
     blurb:
-      "DOCX is a ZIP package. Filelathe reads word/document.xml locally, strips the XML to readable text, and lists every part so you can peek at a Word document without uploading it.",
+      "DOCX is a ZIP package. Filelathe reads word/document.xml locally, strips the XML to readable prose, embeds word/media images when present, and shows the result in the Markdown document viewer.",
   },
   {
     slug: "odt",
@@ -611,9 +611,9 @@ export const SEO_FORMATS: SeoFormat[] = [
     capability: "view",
     group: "archive",
     description:
-      "Open ODT files in your browser. Filelathe extracts content.xml text and lists the OpenDocument package entries locally.",
+      "Open ODT files in your browser. Filelathe extracts content.xml text and shows it in the document viewer.",
     blurb:
-      "ODT/ODS/ODP are ZIP packages. Filelathe reads content.xml in your tab and shows the extracted text plus the entry list — a quick read without LibreOffice.",
+      "ODT files are ZIP packages. Filelathe reads content.xml in your tab, recovers the prose, and opens it in the document viewer — a quick read without LibreOffice.",
   },
   {
     slug: "doc",
@@ -623,9 +623,9 @@ export const SEO_FORMATS: SeoFormat[] = [
     capability: "view",
     group: "archive",
     description:
-      "Open classic .doc files in your browser. Filelathe reads the OLE compound file, lists streams, and peeks recoverable text — no Word install.",
+      "Open classic .doc files in your browser. Filelathe extracts the Word text and shows it in the document viewer — same path as markdown, not a hex dump.",
     blurb:
-      "Pre-2007 Word files are OLE Compound Files (not ZIP). Filelathe sniffs the D0 CF magic, lists streams like WordDocument, and surfaces readable text so .doc does not fall through to a hex dump.",
+      "Pre-2007 Word files are OLE Compound Files. Filelathe reads the WordDocument stream (piece table when present), recovers the prose, and opens it in the Markdown document viewer so .doc feels like a readable document instead of an archive or hex inspector.",
   },
   {
     slug: "xls",
@@ -635,9 +635,9 @@ export const SEO_FORMATS: SeoFormat[] = [
     capability: "view",
     group: "archive",
     description:
-      "Open classic .xls workbooks in your browser. Filelathe treats them as OLE containers, lists streams, and peeks cell text locally.",
+      "Open classic .xls workbooks in your browser as an editable spreadsheet grid — same tool used for CSV.",
     blurb:
-      "Excel 97–2003 .xls files are OLE Compound Files with a Workbook stream. Filelathe browses the container in your tab instead of mis-routing them as CSV or hex.",
+      "Excel 97–2003 .xls files are OLE Compound Files. Filelathe parses the BIFF workbook locally with SheetJS and opens the first sheet in the Spreadsheet editor, so classic Excel gets the same grid UX as CSV.",
   },
   {
     slug: "ppt",
@@ -649,7 +649,31 @@ export const SEO_FORMATS: SeoFormat[] = [
     description:
       "Open classic .ppt decks in your browser. Filelathe lists OLE streams and peeks recoverable slide text locally.",
     blurb:
-      "PowerPoint 97–2003 files are OLE Compound Files. Filelathe sniffs the container, lists streams such as PowerPoint Document, and shows a text peek without uploading the file.",
+      "PowerPoint 97–2003 files are OLE Compound Files. Filelathe sniffs the container and lists streams such as PowerPoint Document. For full slide graphics, use .pptx — Filelathe renders modern decks with pptx-wasm.",
+  },
+  {
+    slug: "pptx",
+    ext: "pptx",
+    also: ["ppt", "odp", "docx", "xlsx"],
+    name: "PowerPoint (PPTX)",
+    capability: "view",
+    group: "archive",
+    description:
+      "Open PPTX decks in your browser with a canvas slide viewer — shapes, images, and charts render locally.",
+    blurb:
+      "Filelathe opens .pptx with pptx-wasm in your tab: navigate slides, see charts and images, and keep the file on-device. No Office install and no upload.",
+  },
+  {
+    slug: "xlsx",
+    ext: "xlsx",
+    also: ["xls", "ods", "csv", "pptx"],
+    name: "Excel workbook (XLSX)",
+    capability: "view",
+    group: "archive",
+    description:
+      "Open XLSX workbooks as an editable spreadsheet grid, with embedded charts shown as bar graphs when chart caches are present.",
+    blurb:
+      "Filelathe parses the workbook locally, opens the first sheet in the Spreadsheet editor, and surfaces xl/charts data as BarGraph widgets when DrawingML chart caches are available.",
   },
   {
     slug: "gz",
