@@ -1,11 +1,16 @@
 /**
- * Compressed-container inspection: sniff ZIP / gzip / tar, list entries, peek
+ * Container inspection: sniff ZIP / gzip / tar / OLE (CFB), list entries, peek
  * readable document text, and extract a single entry on demand.
+ *
+ * Classic Office (.doc / .xls / .ppt / .msg) are OLE Compound Files — not ZIP —
+ * so without this path they fall through as unknown and Jev routes them to the
+ * hex inspector. OOXML/ODF packages stay on the ZIP path.
  *
  * Raw bytes stay client-side (archive-store) — nothing here is sent to compose
  * or Jev. Browser-only APIs (DecompressionStream) are used inside functions so
  * this module still imports safely on the server (types/labels only).
  */
+import * as CFB from "cfb";
 import { unzipSync, type UnzipFileInfo } from "fflate";
 
 export type ArchiveEntry = {
@@ -23,10 +28,10 @@ export type ArchivePeek = {
 };
 
 export type ArchiveFormat = {
-  /** Specific id: zip, docx, xlsx, pptx, odt, ods, odp, epub, jar, gzip, tar, tgz. */
+  /** Specific id: zip, docx, xlsx, pptx, odt, ods, odp, epub, jar, gzip, tar, tgz, doc, xls, ppt, msg, ole. */
   id: string;
   /** Underlying container family. */
-  container: "zip" | "gzip" | "tar";
+  container: "zip" | "gzip" | "tar" | "ole";
   /** Human badge label. */
   label: string;
 };
@@ -66,12 +71,96 @@ const ZIP_PACKAGE_MIME: Record<string, { id: string; label: string }> = {
   "application/java-archive": ZIP_PACKAGES.jar!,
 };
 
+/**
+ * Classic OLE Compound File packages (magic D0 CF 11 E0…).
+ * Distinct from OOXML (.docx/.xlsx/.pptx) which are ZIP.
+ */
+const OLE_PACKAGES: Record<string, { id: string; label: string }> = {
+  doc: { id: "doc", label: "Word 97–2003" },
+  dot: { id: "doc", label: "Word 97–2003 Template" },
+  xls: { id: "xls", label: "Excel 97–2003" },
+  xlt: { id: "xls", label: "Excel 97–2003 Template" },
+  xlm: { id: "xls", label: "Excel 97–2003" },
+  ppt: { id: "ppt", label: "PowerPoint 97–2003" },
+  pot: { id: "ppt", label: "PowerPoint 97–2003 Template" },
+  pps: { id: "ppt", label: "PowerPoint 97–2003 Show" },
+  msg: { id: "msg", label: "Outlook Message" },
+  msi: { id: "ole", label: "Windows Installer" },
+};
+
+const OLE_PACKAGE_MIME: Record<string, { id: string; label: string }> = {
+  "application/msword": OLE_PACKAGES.doc!,
+  "application/vnd.ms-word": OLE_PACKAGES.doc!,
+  "application/vnd.ms-excel": OLE_PACKAGES.xls!,
+  "application/vnd.ms-powerpoint": OLE_PACKAGES.ppt!,
+  "application/vnd.ms-outlook": OLE_PACKAGES.msg!,
+  "application/x-msi": OLE_PACKAGES.msi!,
+};
+
 /** Extensions that route to the archive kind (magic still takes priority). */
 export const ARCHIVE_EXTS =
-  /\.(zip|jar|war|apk|odt|ods|odp|docx|xlsx|pptx|epub|gz|tgz|tar)$/i;
+  /\.(zip|jar|war|apk|odt|ods|odp|docx|xlsx|pptx|epub|gz|tgz|tar|doc|dot|xls|xlt|ppt|pot|pps|msg|msi)$/i;
+
+/** OLE Compound File magic: D0 CF 11 E0 A1 B1 1A E1 */
+export function isOleMagic(bytes: Uint8Array): boolean {
+  return (
+    bytes.length >= 8 &&
+    bytes[0] === 0xd0 &&
+    bytes[1] === 0xcf &&
+    bytes[2] === 0x11 &&
+    bytes[3] === 0xe0 &&
+    bytes[4] === 0xa1 &&
+    bytes[5] === 0xb1 &&
+    bytes[6] === 0x1a &&
+    bytes[7] === 0xe1
+  );
+}
 
 function extOf(name: string): string {
   return name.toLowerCase().match(/\.([^.]+)$/)?.[1] ?? "";
+}
+
+/** Refine generic OLE using well-known stream names inside the CFB. */
+function refineOleFromStreams(
+  bytes: Uint8Array,
+): { id: string; label: string } | null {
+  try {
+    const cfb = CFB.parse(bytes);
+    const names = cfb.FullPaths.map((p) =>
+      p.replace(/^Root Entry\/?/i, "").toLowerCase(),
+    );
+    if (names.some((n) => n === "worddocument" || n.endsWith("/worddocument")))
+      return OLE_PACKAGES.doc!;
+    if (
+      names.some(
+        (n) =>
+          n === "workbook" ||
+          n.endsWith("/workbook") ||
+          n === "book" ||
+          n.endsWith("/book"),
+      )
+    )
+      return OLE_PACKAGES.xls!;
+    if (
+      names.some(
+        (n) =>
+          n === "powerpoint document" ||
+          n.endsWith("/powerpoint document"),
+      )
+    )
+      return OLE_PACKAGES.ppt!;
+    if (
+      names.some(
+        (n) =>
+          n.includes("__substg1.0_") ||
+          n.includes("__properties_version1.0"),
+      )
+    )
+      return OLE_PACKAGES.msg!;
+  } catch {
+    /* ignore — treat as generic OLE */
+  }
+  return null;
 }
 
 /** Detect an archive by magic bytes first, then extension / MIME. */
@@ -97,6 +186,7 @@ export function sniffArchiveFormat(
     bytes.length >= 265 &&
     String.fromCharCode(bytes[257]!, bytes[258]!, bytes[259]!, bytes[260]!, bytes[261]!) ===
       "ustar";
+  const oleMagic = isOleMagic(bytes);
 
   // gzip family (handle .tar.gz / .tgz before plain gzip)
   if (isGzipMagic || ext === "gz" || ext === "tgz") {
@@ -110,9 +200,22 @@ export function sniffArchiveFormat(
     return { id: "tar", container: "tar", label: "Tar Archive" };
   }
 
+  // ZIP / OOXML / ODF before OLE — .docx is ZIP; .doc is OLE.
   if (isZipMagic || ZIP_PACKAGES[ext] || ZIP_PACKAGE_MIME[type]) {
     const pkg = ZIP_PACKAGES[ext] ?? ZIP_PACKAGE_MIME[type] ?? ZIP_PACKAGES.zip!;
     return { id: pkg.id, container: "zip", label: pkg.label };
+  }
+
+  // Classic Office + other Compound File Binary containers
+  if (oleMagic || OLE_PACKAGES[ext] || OLE_PACKAGE_MIME[type]) {
+    let pkg =
+      OLE_PACKAGES[ext] ??
+      OLE_PACKAGE_MIME[type] ??
+      ({ id: "ole", label: "OLE Compound File" } as const);
+    if (pkg.id === "ole" && oleMagic) {
+      pkg = refineOleFromStreams(bytes) ?? pkg;
+    }
+    return { id: pkg.id, container: "ole", label: pkg.label };
   }
 
   return null;
@@ -366,6 +469,218 @@ async function gzipPeek(bytes: Uint8Array, name: string): Promise<ArchivePeek> {
   };
 }
 
+function cfbContentToBytes(content: number[] | Uint8Array | undefined): Uint8Array {
+  if (!content) return new Uint8Array();
+  if (content instanceof Uint8Array) return content;
+  return new Uint8Array(content);
+}
+
+function streamBasename(fullPath: string): string {
+  const trimmed = fullPath.replace(/\/$/, "");
+  const parts = trimmed.split("/").filter(Boolean);
+  return parts[parts.length - 1] ?? trimmed;
+}
+
+/** Prefer streams that usually hold document text for classic Office. */
+function olePrimaryStreamNames(formatId: string): string[] {
+  switch (formatId) {
+    case "doc":
+      return ["WordDocument"];
+    case "xls":
+      return ["Workbook", "Book"];
+    case "ppt":
+      return ["PowerPoint Document"];
+    case "msg":
+      return []; // many __substg body streams — scrape broadly
+    default:
+      return ["WordDocument", "Workbook", "Book", "PowerPoint Document"];
+  }
+}
+
+function isMostlyPrintable(code: number): boolean {
+  if (code === 0x09 || code === 0x0a || code === 0x0d) return true;
+  if (code < 0x20 || code === 0x7f) return false;
+  if (code >= 0xd800 && code <= 0xdfff) return false; // surrogates
+  if (code === 0xfffe || code === 0xffff) return false;
+  return code < 0xfffe;
+}
+
+/**
+ * Best-effort plain text from OLE streams: UTF-16LE runs (Word Unicode) plus
+ * ASCII runs (ANSI Word / BIFF labels). Not a full FIB/piece-table or BIFF
+ * parser — enough for ArchiveBrowser peek without shipping SheetJS/mammoth.
+ */
+export function scrapeOleReadableText(
+  bytes: Uint8Array,
+  max = MAX_PEEK_TEXT,
+): string | null {
+  const parts: string[] = [];
+  const pushRun = (run: string) => {
+    const cleaned = run.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
+    if (cleaned.length >= 4) parts.push(cleaned);
+  };
+
+  // UTF-16LE runs
+  let u16 = "";
+  for (let i = 0; i + 1 < bytes.length; i += 2) {
+    const code = bytes[i]! | (bytes[i + 1]! << 8);
+    if (code === 0) {
+      pushRun(u16);
+      u16 = "";
+    } else if (isMostlyPrintable(code)) {
+      u16 += String.fromCharCode(code);
+      if (u16.length >= 8000) {
+        pushRun(u16);
+        u16 = "";
+      }
+    } else {
+      pushRun(u16);
+      u16 = "";
+    }
+  }
+  pushRun(u16);
+
+  // ASCII / Latin-1 runs (skip if we already have plenty of Unicode text)
+  if (parts.join("\n").length < 200) {
+    let asc = "";
+    for (let i = 0; i < bytes.length; i++) {
+      const code = bytes[i]!;
+      if (code === 0) {
+        pushRun(asc);
+        asc = "";
+      } else if (
+        code === 0x09 ||
+        code === 0x0a ||
+        code === 0x0d ||
+        (code >= 0x20 && code < 0x7f)
+      ) {
+        asc += String.fromCharCode(code);
+        if (asc.length >= 8000) {
+          pushRun(asc);
+          asc = "";
+        }
+      } else {
+        pushRun(asc);
+        asc = "";
+      }
+    }
+    pushRun(asc);
+  }
+
+  // Prefer longer unique runs; drop near-duplicates
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+  for (const part of parts.sort((a, b) => b.length - a.length)) {
+    const key = part.slice(0, 80).toLowerCase();
+    if (seen.has(key)) continue;
+    // Skip runs that look like CLSID / hex noise
+    if (/^[0-9a-f.\-{}]+$/i.test(part) && part.length < 64) continue;
+    if ((part.match(/[a-zA-Z]/g) ?? []).length < Math.min(4, part.length / 4))
+      continue;
+    seen.add(key);
+    ordered.push(part);
+    if (ordered.join("\n").length >= max) break;
+  }
+  const text = ordered.join("\n\n").replace(/\n{3,}/g, "\n\n").trim();
+  return text ? text.slice(0, max) : null;
+}
+
+function findCfbStream(
+  cfb: CFB.CFB$Container,
+  wanted: string,
+): Uint8Array | null {
+  const entry = CFB.find(cfb, wanted);
+  if (!entry || entry.type !== 2 /* stream */) return null;
+  const data = cfbContentToBytes(entry.content);
+  return data.length ? data : null;
+}
+
+function readOlePeek(bytes: Uint8Array, format: ArchiveFormat): ArchivePeek {
+  const cfb = CFB.parse(bytes);
+  const entries: ArchiveEntry[] = [];
+  const streams = new Map<string, Uint8Array>();
+
+  for (let i = 0; i < cfb.FullPaths.length; i++) {
+    const fullPath = cfb.FullPaths[i]!;
+    const entry = cfb.FileIndex[i]!;
+    if (!entry) continue;
+    // type: 2 = stream, 1 = storage (dir), 5 = root
+    if (entry.type === 5) continue;
+    const name = fullPath.replace(/^Root Entry\/?/i, "") || entry.name;
+    if (!name || name === "Root Entry") continue;
+    const isDir = entry.type === 1 || fullPath.endsWith("/");
+    const data = isDir ? null : cfbContentToBytes(entry.content);
+    const size = data?.length ?? 0;
+    if (name.includes("\x01Sh33tJ5")) continue; // cfb write marker
+    entries.push({ name: name.replace(/\/$/, ""), size, isDir });
+    if (data && size > 0 && size <= MAX_PEEK_BYTES) {
+      streams.set(streamBasename(name), data);
+      streams.set(name.replace(/\/$/, ""), data);
+    }
+  }
+
+  const primaryNames = olePrimaryStreamNames(format.id);
+  let peekText: string | null = null;
+  for (const streamName of primaryNames) {
+    const data =
+      streams.get(streamName) ?? findCfbStream(cfb, streamName);
+    if (!data) continue;
+    peekText = scrapeOleReadableText(data);
+    if (peekText) break;
+  }
+
+  // MSG / generic: scrape a few largest streams
+  if (!peekText) {
+    const largest = [...streams.entries()]
+      .filter(([n]) => !/checksum|documentsummary|summaryinformation/i.test(n))
+      .sort((a, b) => b[1].length - a[1].length)
+      .slice(0, 4);
+    const chunks: string[] = [];
+    for (const [, data] of largest) {
+      const text = scrapeOleReadableText(data, 6000);
+      if (text) chunks.push(text);
+      if (chunks.join("\n").length >= MAX_PEEK_TEXT) break;
+    }
+    peekText = chunks.length
+      ? chunks.join("\n\n").slice(0, MAX_PEEK_TEXT)
+      : null;
+  }
+
+  return {
+    entries: entries.slice(0, MAX_ENTRIES),
+    peekText,
+    peekXml: null,
+  };
+}
+
+function extractOleEntry(
+  bytes: Uint8Array,
+  entryName: string,
+): Uint8Array | null {
+  const cfb = CFB.parse(bytes);
+  const wanted = entryName.replace(/^Root Entry\/?/i, "").replace(/\/$/, "");
+  const direct = CFB.find(cfb, wanted) ?? CFB.find(cfb, entryName);
+  if (direct && direct.type === 2) {
+    const data = cfbContentToBytes(direct.content);
+    return data.length ? data.slice() : null;
+  }
+  // Match by basename or full path suffix
+  for (let i = 0; i < cfb.FullPaths.length; i++) {
+    const fullPath = cfb.FullPaths[i]!.replace(/^Root Entry\/?/i, "");
+    const entry = cfb.FileIndex[i]!;
+    if (!entry || entry.type !== 2) continue;
+    if (
+      fullPath === wanted ||
+      fullPath.replace(/\/$/, "") === wanted ||
+      streamBasename(fullPath) === wanted
+    ) {
+      const data = cfbContentToBytes(entry.content);
+      return data.length ? data.slice() : null;
+    }
+  }
+  return null;
+}
+
 /** List entries and peek readable text for a detected archive. */
 export async function readArchive(
   bytes: Uint8Array,
@@ -375,6 +690,7 @@ export async function readArchive(
   try {
     if (format.container === "zip") return readZipPeek(bytes, format);
     if (format.container === "gzip") return await gzipPeek(bytes, name);
+    if (format.container === "ole") return readOlePeek(bytes, format);
     // tar family
     const raw = format.id === "tgz" ? await gunzip(bytes) : bytes;
     return tarPeek(parseTar(raw));
@@ -400,6 +716,9 @@ export async function extractEntry(
     }
     if (format.container === "gzip") {
       return await gunzip(bytes);
+    }
+    if (format.container === "ole") {
+      return extractOleEntry(bytes, entryName);
     }
     const raw = format.id === "tgz" ? await gunzip(bytes) : bytes;
     const rec = parseTar(raw).find((r) => r.name === entryName && !r.isDir);
@@ -451,6 +770,14 @@ export function formatFromId(id: string): ArchiveFormat {
   if (id === "gzip") return { id, container: "gzip", label: "Gzip" };
   if (id === "tar") return { id, container: "tar", label: "Tar Archive" };
   if (id === "tgz") return { id, container: "tar", label: "Gzipped Tar" };
+  const ole = Object.values(OLE_PACKAGES).find((p) => p.id === id);
+  if (ole || id === "ole") {
+    return {
+      id,
+      container: "ole",
+      label: ole?.label ?? "OLE Compound File",
+    };
+  }
   const label =
     Object.values(ZIP_PACKAGES).find((p) => p.id === id)?.label ??
     "Zip Archive";

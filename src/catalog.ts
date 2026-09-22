@@ -125,7 +125,7 @@ const dashboardExtras = {
       note: z.string().nullable(),
     }),
     description:
-      "Browser for compressed containers (ZIP/ODT/DOCX/XLSX/PPTX/EPUB/gzip/tar): entry listing, extracted document text, click-to-open an entry as its own window. Container bytes stay client-side; never invent this.",
+      "Browser for containers (ZIP/ODT/DOCX/XLSX/PPTX/EPUB/gzip/tar and classic OLE .doc/.xls/.ppt/.msg): entry listing, extracted document text, click-to-open an entry as its own window. Container bytes stay client-side; never invent this.",
   },
   InventedViewer: {
     props: z.object({
