@@ -199,7 +199,7 @@ export function buildFileCandidates(file: LoadedFile): Candidate[] {
   if (file.kind === "csv") {
     add(
       "spreadsheet",
-      `Spreadsheet: editable grid with columns ${JSON.stringify(file.columns)}. Always include for CSV files.`,
+      `Spreadsheet: editable grid with columns ${JSON.stringify(file.columns)}. Always include for spreadsheet/CSV files.`,
       "Spreadsheet",
       {
         columns: file.columns,

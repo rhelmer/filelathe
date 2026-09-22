@@ -11,6 +11,7 @@ import {
 } from "./archive-store";
 import { buildInventPrompt } from "./invent-prompt";
 import { deleteModule, nextModuleId, putModule } from "./module-store";
+import { promoteOfficeFormat } from "./office";
 import { filenameFromUrl, toHexPreview, tryDecodeText } from "./resource-utils";
 
 /** Normalized payload produced from a dropped/selected file. */
@@ -600,6 +601,28 @@ export async function loadDroppedFile(file: File): Promise<LoadedFile> {
 
   const archiveFormat = sniffArchiveFormat(bytes, file.name, mimeType);
   if (archiveFormat) {
+    // Documents/sheets → same viewers as markdown / CSV when we can extract.
+    const promoted = await promoteOfficeFormat(bytes, archiveFormat);
+    if (promoted?.kind === "markdown") {
+      return {
+        kind: "markdown",
+        title,
+        filename: file.name,
+        mimeType: promoted.mimeType || mimeType,
+        markdown: promoted.markdown,
+      };
+    }
+    if (promoted?.kind === "csv") {
+      return {
+        kind: "csv",
+        title,
+        filename: file.name,
+        mimeType: promoted.mimeType || mimeType,
+        columns: promoted.columns,
+        rows: promoted.rows,
+      };
+    }
+
     const peek = await readArchive(bytes, archiveFormat, file.name);
     const archiveId = nextArchiveId();
     putArchive(archiveId, buffer);
@@ -668,11 +691,11 @@ export function promptForFile(file: LoadedFile): string {
     case "json":
       return "Create an editor form for the loaded record fields with Save changes";
     case "csv":
-      return "Show a spreadsheet editor for the loaded CSV";
+      return "Show a spreadsheet editor for the loaded sheet";
     case "text":
       return "Show the loaded document text";
     case "markdown":
-      return "Show the rendered Markdown document only";
+      return "Show the rendered document only";
     case "webpage":
       return "Show the webpage snapshot viewer for the fetched HTML";
     case "video":

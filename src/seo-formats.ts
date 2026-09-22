@@ -599,9 +599,9 @@ export const SEO_FORMATS: SeoFormat[] = [
     capability: "view",
     group: "archive",
     description:
-      "Open DOCX files in your browser. Filelathe extracts the document text and lists the package parts — no Office install.",
+      "Open DOCX files in your browser. Filelathe extracts the document text and opens it in the document viewer — no Office install.",
     blurb:
-      "DOCX is a ZIP package. Filelathe reads word/document.xml locally, strips the XML to readable text, and lists every part so you can peek at a Word document without uploading it.",
+      "DOCX is a ZIP package. Filelathe reads word/document.xml locally, strips the XML to readable prose, and shows it in the Markdown document viewer so you can read a Word file without uploading it.",
   },
   {
     slug: "odt",
@@ -611,9 +611,9 @@ export const SEO_FORMATS: SeoFormat[] = [
     capability: "view",
     group: "archive",
     description:
-      "Open ODT files in your browser. Filelathe extracts content.xml text and lists the OpenDocument package entries locally.",
+      "Open ODT files in your browser. Filelathe extracts content.xml text and shows it in the document viewer.",
     blurb:
-      "ODT/ODS/ODP are ZIP packages. Filelathe reads content.xml in your tab and shows the extracted text plus the entry list — a quick read without LibreOffice.",
+      "ODT files are ZIP packages. Filelathe reads content.xml in your tab, recovers the prose, and opens it in the document viewer — a quick read without LibreOffice.",
   },
   {
     slug: "doc",
@@ -623,9 +623,9 @@ export const SEO_FORMATS: SeoFormat[] = [
     capability: "view",
     group: "archive",
     description:
-      "Open classic .doc files in your browser. Filelathe reads the OLE compound file, lists streams, and peeks recoverable text — no Word install.",
+      "Open classic .doc files in your browser. Filelathe extracts the Word text and shows it in the document viewer — same path as markdown, not a hex dump.",
     blurb:
-      "Pre-2007 Word files are OLE Compound Files (not ZIP). Filelathe sniffs the D0 CF magic, lists streams like WordDocument, and surfaces readable text so .doc does not fall through to a hex dump.",
+      "Pre-2007 Word files are OLE Compound Files. Filelathe reads the WordDocument stream (piece table when present), recovers the prose, and opens it in the Markdown document viewer so .doc feels like a readable document instead of an archive or hex inspector.",
   },
   {
     slug: "xls",
@@ -635,9 +635,9 @@ export const SEO_FORMATS: SeoFormat[] = [
     capability: "view",
     group: "archive",
     description:
-      "Open classic .xls workbooks in your browser. Filelathe treats them as OLE containers, lists streams, and peeks cell text locally.",
+      "Open classic .xls workbooks in your browser as an editable spreadsheet grid — same tool used for CSV.",
     blurb:
-      "Excel 97–2003 .xls files are OLE Compound Files with a Workbook stream. Filelathe browses the container in your tab instead of mis-routing them as CSV or hex.",
+      "Excel 97–2003 .xls files are OLE Compound Files. Filelathe parses the BIFF workbook locally with SheetJS and opens the first sheet in the Spreadsheet editor, so classic Excel gets the same grid UX as CSV.",
   },
   {
     slug: "ppt",

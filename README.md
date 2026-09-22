@@ -58,10 +58,12 @@ drop / URL
     ▼
 detect FileKind (image, pdf, csv, tracker, archive, … or unknown)
     │
-    ├─ archive (zip/gzip/tar + odt/docx/xlsx/pptx/epub
-    │            + classic OLE doc/xls/ppt/msg) → ArchiveBrowser
+    ├─ archive (zip/gzip/tar + ppt/epub + other containers) → ArchiveBrowser
     │        (list entries, peek document text, click-to-open an entry;
     │         container bytes stay client-side, never sent to Jev)
+    │
+    ├─ office docs (doc/docx/odt) → MarkdownView (extracted prose)
+    ├─ office sheets (xls/xlsx/ods) → Spreadsheet (cell grid)
     │
     ├─ known kind ──────────► Jev composes a Spec from catalog candidates
     │
