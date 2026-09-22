@@ -101,6 +101,28 @@ var dashboardExtras = {
     }),
     description: "Hex/metadata inspector for opaque binaries and for formats whose emulator is planned but not wired. Never a fake emulator."
   },
+  ArchiveBrowser: {
+    props: z.object({
+      archiveId: z.string(),
+      filename: z.string(),
+      mimeType: z.string(),
+      size: z.number(),
+      format: z.string(),
+      formatLabel: z.string(),
+      entries: z.array(
+        z.object({
+          name: z.string(),
+          size: z.number(),
+          isDir: z.boolean()
+        })
+      ),
+      peekText: z.string().nullable(),
+      peekXml: z.string().nullable(),
+      hexPreview: z.string(),
+      note: z.string().nullable()
+    }),
+    description: "Browser for compressed containers (ZIP/ODT/DOCX/XLSX/PPTX/EPUB/gzip/tar): entry listing, extracted document text, click-to-open an entry as its own window. Container bytes stay client-side; never invent this."
+  },
   InventedViewer: {
     props: z.object({
       /**
@@ -146,6 +168,34 @@ var catalog = defineCatalog(schema, {
     }
   }
 });
+
+// src/archive.ts
+import { unzipSync } from "fflate";
+var MAX_PEEK_BYTES = 4 * 1024 * 1024;
+var ZIP_PACKAGES = {
+  odt: { id: "odt", label: "OpenDocument Text" },
+  ods: { id: "ods", label: "OpenDocument Sheet" },
+  odp: { id: "odp", label: "OpenDocument Slides" },
+  docx: { id: "docx", label: "Word Document" },
+  xlsx: { id: "xlsx", label: "Excel Workbook" },
+  pptx: { id: "pptx", label: "PowerPoint" },
+  epub: { id: "epub", label: "EPUB Book" },
+  jar: { id: "jar", label: "Java Archive" },
+  war: { id: "jar", label: "Java Web Archive" },
+  apk: { id: "zip", label: "Android Package" },
+  zip: { id: "zip", label: "Zip Archive" }
+};
+var ZIP_PACKAGE_MIME = {
+  "application/zip": ZIP_PACKAGES.zip,
+  "application/vnd.oasis.opendocument.text": ZIP_PACKAGES.odt,
+  "application/vnd.oasis.opendocument.spreadsheet": ZIP_PACKAGES.ods,
+  "application/vnd.oasis.opendocument.presentation": ZIP_PACKAGES.odp,
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ZIP_PACKAGES.docx,
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ZIP_PACKAGES.xlsx,
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": ZIP_PACKAGES.pptx,
+  "application/epub+zip": ZIP_PACKAGES.epub,
+  "application/java-archive": ZIP_PACKAGES.jar
+};
 
 // src/invent-catalog.ts
 import { defineCatalog as defineCatalog2 } from "@json-render/core";
@@ -438,6 +488,8 @@ function promptForFile(file) {
       return "Show a PDF viewer for the loaded document";
     case "tracker":
       return "Show a tracker player for the loaded module";
+    case "archive":
+      return "Show the archive browser for the loaded container: list entries and extracted text";
     case "unknown":
       return "Show the invented catalog Spec viewer for this unrecognized resource";
   }
@@ -464,6 +516,8 @@ function labelForKind(kind) {
       return "PDF viewer";
     case "tracker":
       return "Tracker player";
+    case "archive":
+      return "Archive";
     case "unknown":
       return "Invented Spec";
   }
@@ -483,7 +537,7 @@ function buildFileCandidates(file) {
       element: { type, props, ...on ? { on } : {} }
     });
   }
-  const fillWindow = file.kind === "webpage" || file.kind === "image" || file.kind === "video" || file.kind === "pdf" || file.kind === "tracker" || file.kind === "csv";
+  const fillWindow = file.kind === "webpage" || file.kind === "image" || file.kind === "video" || file.kind === "pdf" || file.kind === "tracker" || file.kind === "archive" || file.kind === "csv";
   add(
     "card",
     fillWindow ? "Card: full-width border-only shell so the primary viewer fills the floating window (no title \u2014 chrome already shows name/type)." : "Card: bordered container for the file content only (no title \u2014 the window chrome already shows name/type).",
@@ -642,6 +696,27 @@ function buildFileCandidates(file) {
       "data:spreadsheet"
     );
   }
+  if (file.kind === "archive") {
+    add(
+      "archive_browser",
+      `ArchiveBrowser: entry listing + extracted text for the ${file.formatLabel} container ${JSON.stringify(file.filename)} (${file.entries.length} entries). Always include for archives; never invent this.`,
+      "ArchiveBrowser",
+      {
+        archiveId: file.archiveId,
+        filename: file.filename,
+        mimeType: file.mimeType,
+        size: file.size,
+        format: file.format,
+        formatLabel: file.formatLabel,
+        entries: file.entries,
+        peekText: file.peekText,
+        peekXml: file.peekXml,
+        hexPreview: file.hexPreview,
+        note: null
+      },
+      "data:archive"
+    );
+  }
   if (file.kind === "unknown") {
     add(
       "invented",
@@ -774,6 +849,16 @@ function stateForFile(file) {
   if (file.kind === "csv") {
     base.file.columns = file.columns;
     base.file.rows = file.rows;
+  }
+  if (file.kind === "archive") {
+    base.file.archiveId = file.archiveId;
+    base.file.format = file.format;
+    base.file.formatLabel = file.formatLabel;
+    base.file.size = file.size;
+    base.file.entries = file.entries;
+    base.file.peekText = file.peekText;
+    base.file.peekXml = file.peekXml;
+    base.file.hexPreview = file.hexPreview;
   }
   if (file.kind === "unknown") {
     base.file.size = file.size;
@@ -1909,6 +1994,39 @@ ${pretty}
         { note: alertNote("note", note) }
       );
     }
+    case "archive":
+      return {
+        root: "card",
+        elements: {
+          card: {
+            type: "Card",
+            props: {
+              title: null,
+              description: null,
+              maxWidth: "full",
+              centered: null
+            },
+            children: ["browser"]
+          },
+          browser: {
+            type: "ArchiveBrowser",
+            props: {
+              archiveId: file.archiveId,
+              filename: file.filename,
+              mimeType: file.mimeType,
+              size: file.size,
+              format: file.format,
+              formatLabel: file.formatLabel,
+              entries: file.entries,
+              peekText: file.peekText,
+              peekXml: file.peekXml,
+              hexPreview: file.hexPreview,
+              note
+            },
+            children: []
+          }
+        }
+      };
     case "unknown":
       return {
         root: "card",
