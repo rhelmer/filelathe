@@ -125,7 +125,7 @@ Nothing is uploaded to a durable backend. Files live in the browser (and briefly
 
 | Store | What | Lifetime |
 | --- | --- | --- |
-| **IndexedDB** `jev-invented-specs` | Haiku-invented Specs (+ prompt), keyed by content hash and by extension+MIME | Persists in this browser until cleared (“Clear saved Specs” in the UI) |
+| **IndexedDB** `jev-invented-specs` | Haiku-invented Specs (+ prompt), keyed by content hash, dialect, and extension+MIME | Persists in this browser until cleared (“Clear saved Specs” in the UI) |
 | **In-memory `Map`** (`module-store.ts`) | Tracker module `ArrayBuffer`s | Current page session only — never sent to Jev/compose |
 | **In-memory `Map`** (`archive-store.ts`) | Archive container `ArrayBuffer`s | Current page session only — never sent to Jev/compose (persisted in IndexedDB like trackers) |
 | **React state** (`App.tsx`) | Open windows, geometry, Specs | Until refresh / close |
@@ -138,7 +138,10 @@ Nothing is uploaded to a durable backend. Files live in the browser (and briefly
 On a successful Haiku invent, the client writes two IndexedDB records (`sandbox-store.ts`):
 
 - **content** — SHA-256 of sample text (or hex preview) → exact reuse for the same payload  
-- **extension** — `ext:{ext}:{mime}` → template reuse for similar files  
+- **dialect** — `kind:{dialect}` when the format is narrower than the extension (`xml-sitemap`, `rss-atom`, `svg`, `robots-txt`). This record is **not** also written as the extension template, so a sitemap Spec does not become the viewer for every `.xml` file  
+- **extension** — `ext:{ext}:{mime}` → template reuse for that extension, written only when there is no dialect  
+
+Lookup order is content, then dialect, then extension. Sitemap detection itself stays in `invent-prompt.ts` (Haiku invents from the sample); the dialect key only decides which saved Spec is reused.
 
 Only Specs with `inventedBy: "haiku"` are reused from cache (not fallbacks). Planned emulator formats never reuse invent cache; they always inspect.
 

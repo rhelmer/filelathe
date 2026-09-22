@@ -15,7 +15,15 @@ import {
 } from "./invent-viewer";
 import { hydrateInventedSpec } from "./invent-hydrate";
 import { scrubPromptForContrib, scrubSpecForContrib } from "./contrib-scrub";
+import { contribFilename } from "./github-contrib";
 import type { InventInput } from "./invent-prompt";
+import {
+  dedupeSandboxRecords,
+  orderedSandboxLookupKeys,
+  sandboxDialectKey,
+  sandboxTemplateTarget,
+  type SandboxRecord,
+} from "./sandbox-store";
 
 let failed = 0;
 function check(name: string, ok: boolean, detail = "") {
@@ -194,6 +202,162 @@ check("scrub removes sample", !blob.includes("filelathe"));
 const prompt = `Sample text (may be truncated; use as real content in state/props):\nSECRET_TOKEN=abc\n\nHex preview (use in a Hex tab when useful):\n000000  ff\n`;
 const scrubbedPrompt = scrubPromptForContrib(prompt)!;
 check("scrub prompt", !scrubbedPrompt.includes("SECRET_TOKEN"));
+
+console.log("dialect cache keys");
+const genericXml = `<?xml version="1.0"?><config><name>filelathe</name></config>`;
+check(
+  "sitemap dialect key",
+  sandboxDialectKey({
+    filename: "sitemap.xml",
+    sampleText: sitemapSample,
+  }) === "kind:xml-sitemap",
+);
+check(
+  "generic xml has no dialect",
+  sandboxDialectKey({ filename: "config.xml", sampleText: genericXml }) ===
+    null,
+);
+check(
+  "rss dialect key",
+  sandboxDialectKey({
+    filename: "feed.xml",
+    sampleText: `<?xml version="1.0"?><rss version="2.0"><channel><title>t</title></channel></rss>`,
+  }) === "kind:rss-atom",
+);
+check(
+  "svg-in-xml dialect key",
+  sandboxDialectKey({
+    filename: "drawing.xml",
+    sampleText: `<svg xmlns="http://www.w3.org/2000/svg"></svg>`,
+  }) === "kind:svg",
+);
+check(
+  "robots dialect key",
+  sandboxDialectKey({
+    filename: "robots.txt",
+    sampleText: "User-agent: *\nDisallow:\n",
+  }) === "kind:robots-txt",
+);
+
+const sitemapTemplate = sandboxTemplateTarget({
+  filename: "sitemap.xml",
+  mimeType: "application/xml",
+  sampleText: sitemapSample,
+});
+check(
+  "sitemap saves as dialect, not extension",
+  sitemapTemplate.scope === "dialect" &&
+    sitemapTemplate.key === "kind:xml-sitemap",
+);
+const xmlTemplate = sandboxTemplateTarget({
+  filename: "config.xml",
+  mimeType: "application/xml",
+  sampleText: genericXml,
+});
+check(
+  "generic xml saves as extension",
+  xmlTemplate.scope === "extension" &&
+    xmlTemplate.key === "ext:xml:application/xml",
+);
+
+const sitemapLookup = orderedSandboxLookupKeys({
+  contentKey: "content:sitemap",
+  filename: "sitemap.xml",
+  mimeType: "application/xml",
+  sampleText: sitemapSample,
+});
+check(
+  "sitemap lookup prefers dialect over extension",
+  sitemapLookup[0] === "content:sitemap" &&
+    sitemapLookup[1] === "kind:xml-sitemap" &&
+    sitemapLookup[2] === "ext:xml:application/xml",
+);
+const xmlLookup = orderedSandboxLookupKeys({
+  contentKey: "content:config",
+  filename: "config.xml",
+  mimeType: "application/xml",
+  sampleText: genericXml,
+});
+check(
+  "generic xml lookup is content then extension",
+  xmlLookup.length === 2 &&
+    xmlLookup[0] === "content:config" &&
+    xmlLookup[1] === "ext:xml:application/xml",
+);
+
+const emptySpec = { root: "main", elements: {} } as SandboxRecord["spec"];
+function record(
+  partial: Pick<SandboxRecord, "key" | "scope" | "savedAt"> &
+    Partial<SandboxRecord>,
+): SandboxRecord {
+  return {
+    extension: "xml",
+    mimeType: "application/xml",
+    filenameHint: "example.xml",
+    spec: emptySpec,
+    inventedBy: "haiku",
+    ...partial,
+  };
+}
+const listed = dedupeSandboxRecords([
+  record({
+    key: "content:sitemap",
+    scope: "content",
+    dialect: "xml-sitemap",
+    savedAt: 2,
+  }),
+  record({
+    key: "kind:xml-sitemap",
+    scope: "dialect",
+    dialect: "xml-sitemap",
+    savedAt: 3,
+  }),
+  record({
+    key: "ext:xml:application/xml",
+    scope: "extension",
+    filenameHint: "config.xml",
+    savedAt: 1,
+  }),
+  record({
+    key: "content:config",
+    scope: "content",
+    filenameHint: "config.xml",
+    savedAt: 4,
+  }),
+]);
+check(
+  "saved list keeps dialect and generic xml content",
+  listed.map((r) => r.key).join(",") === "content:config,kind:xml-sitemap",
+);
+const listedDialectOnly = dedupeSandboxRecords([
+  record({
+    key: "kind:xml-sitemap",
+    scope: "dialect",
+    dialect: "xml-sitemap",
+    savedAt: 3,
+  }),
+  record({
+    key: "ext:xml:application/xml",
+    scope: "extension",
+    savedAt: 1,
+  }),
+]);
+check(
+  "dialect does not hide the extension template",
+  listedDialectOnly.map((r) => r.key).join(",") ===
+    "kind:xml-sitemap,ext:xml:application/xml",
+);
+check(
+  "dialect contrib filename is the dialect id",
+  contribFilename(
+    record({
+      key: "kind:xml-sitemap",
+      scope: "dialect",
+      dialect: "xml-sitemap",
+      savedAt: 3,
+    }),
+  ) === "xml-sitemap.json",
+);
 
 if (failed > 0) {
   console.error(`\n${failed} check(s) failed`);
