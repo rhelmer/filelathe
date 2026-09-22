@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { defineRegistry } from "@json-render/react";
 import { shadcnComponents } from "@json-render/shadcn";
 import { ArchiveBrowser } from "./ArchiveBrowser";
@@ -9,6 +10,7 @@ import { PdfViewer, VideoPlayer } from "./PdfVideo";
 import { PixelEditor } from "./PixelEditor";
 import { Spreadsheet } from "./Spreadsheet";
 import { TrackerPlayer } from "./TrackerPlayer";
+import { usePersistedMedia } from "./use-persisted-media";
 import { WebPageViewer } from "./WebPageViewer";
 
 function Metric({
@@ -90,12 +92,16 @@ function AudioPlayer({
   };
   emit: (event: string) => void;
 }) {
+  const mediaRef = useRef<HTMLAudioElement | null>(null);
+  usePersistedMedia(mediaRef, props.src);
+
   return (
     <div className="space-y-2 rounded-xl border bg-card p-4 shadow-sm">
       {props.title ? (
         <div className="text-sm font-medium">{props.title}</div>
       ) : null}
       <audio
+        ref={mediaRef}
         className="w-full"
         controls
         src={props.src}

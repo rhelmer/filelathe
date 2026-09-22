@@ -7,6 +7,11 @@ import type { Spec } from "@json-render/core";
 import { putArchive } from "./archive-store";
 import { stateForFile } from "./file-candidates";
 import type { LoadedFile } from "./files";
+import {
+  getMediaPlayback,
+  setMediaPlayback,
+  type MediaPlaybackState,
+} from "./media-playback";
 import { putModule } from "./module-store";
 import type { WindowGeometry } from "./WindowChrome";
 
@@ -34,6 +39,8 @@ export type SessionWindow = {
   minimized: boolean;
   maximized: boolean;
   restore: WindowGeometry | null;
+  /** Seek / play state for audio, video, and tracker windows. */
+  playback: MediaPlaybackState | null;
 };
 
 export type SessionSnapshot = {
@@ -139,6 +146,7 @@ export async function serializeWindow(
     minimized: item.minimized,
     maximized: item.maximized,
     restore: item.restore,
+    playback: getMediaPlayback(item.id) ?? null,
   };
 }
 
@@ -162,6 +170,14 @@ export function reviveWindow(stored: SessionWindow): LiveWindow {
 
   if (file.kind === "archive" && stored.archiveBytes) {
     putArchive(file.archiveId, stored.archiveBytes);
+  }
+
+  if (
+    stored.playback &&
+    typeof stored.playback.currentTime === "number" &&
+    typeof stored.playback.playing === "boolean"
+  ) {
+    setMediaPlayback(stored.id, stored.playback);
   }
 
   const spec = structuredClone(stored.spec) as Spec;

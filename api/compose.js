@@ -268,56 +268,390 @@ var inventCatalog = defineCatalog2(schema2, {
 var INVENT_COMPONENT_NAMES = inventCatalog.componentNames;
 
 // src/invent-prompt.ts
+function countMatches(sample, re) {
+  const flags = re.flags.includes("g") ? re.flags : `${re.flags}g`;
+  return [...sample.matchAll(new RegExp(re.source, flags))].length;
+}
+function xmlRootTag(sample) {
+  const m = sample.match(/<\s*([A-Za-z_][\w:.-]*)\b/);
+  return m?.[1]?.toLowerCase() ?? null;
+}
+function xmlLocalName(tag) {
+  if (!tag) return null;
+  const i = tag.indexOf(":");
+  return i >= 0 ? tag.slice(i + 1) : tag;
+}
+function analyzeFileSample(filename, sampleText, size) {
+  const name = filename.toLowerCase();
+  const sample = sampleText?.trim() ?? "";
+  const facts = [`Filename: ${filename}`, `Size: ${size} bytes`];
+  const checks = [];
+  const metrics = [
+    { label: "Size", value: `${size} B` }
+  ];
+  if (!sample) {
+    return {
+      identity: "binary or empty sample",
+      facts: [...facts, "No decodable text sample in the first bytes."],
+      checks: [
+        "Cannot validate structure without a text decode \u2014 use Hex + Meta only."
+      ],
+      metrics,
+      summaryMarkdown: "## Unknown / binary\n\nNo text sample was decoded. Use the Hex tab for a byte preview."
+    };
+  }
+  const root = xmlRootTag(sample);
+  const local = xmlLocalName(root);
+  if (name.includes("sitemap") || local === "urlset" || local === "sitemapindex" || /xmlns=["']https?:\/\/www\.sitemaps\.org\/schemas\/sitemap\/0\.9["']/i.test(
+    sample
+  )) {
+    const isIndex = local === "sitemapindex" || /<sitemapindex\b/i.test(sample);
+    const urlCount = countMatches(sample, /<url\b/i);
+    const sitemapCount = countMatches(sample, /<sitemap\b/i);
+    const locCount = countMatches(sample, /<loc\b/i);
+    const hasNs = /sitemaps\.org\/schemas\/sitemap/i.test(sample);
+    const locs = [...sample.matchAll(/<loc>\s*([^<]+?)\s*<\/loc>/gi)].map((m) => m[1].trim()).slice(0, 8);
+    facts.push(
+      isIndex ? "Looks like a sitemap index (sitemapindex)." : "Looks like a URL sitemap (urlset).",
+      hasNs ? "Declares the standard sitemaps.org 0.9 namespace." : "Missing or non-standard sitemaps.org namespace.",
+      `Counted <loc>: ${locCount}; <url>: ${urlCount}; <sitemap>: ${sitemapCount}.`
+    );
+    if (locs.length) {
+      facts.push(`First locations: ${locs.join(" \xB7 ")}`);
+    }
+    if (!hasNs) {
+      checks.push(
+        'Warn: sitemap protocol usually uses xmlns="http://www.sitemaps.org/schemas/sitemap/0.9".'
+      );
+    }
+    if (isIndex && sitemapCount === 0) {
+      checks.push("Sitemap index has no <sitemap> children in the sample.");
+    }
+    if (!isIndex && urlCount === 0 && locCount === 0) {
+      checks.push("No <url>/<loc> entries visible in the sample (truncated?).");
+    }
+    if (sample.includes("<") && !sample.includes(`</${local}`)) {
+      checks.push(
+        "Sample may be truncated \u2014 closing root tag not seen; treat counts as lower bounds."
+      );
+    }
+    checks.push(
+      sample.startsWith("<") || sample.startsWith("<?xml") ? "Opens like XML (good)." : "Does not start with XML prologue or < \u2014 may be malformed."
+    );
+    metrics.push(
+      { label: "Type", value: isIndex ? "index" : "urlset" },
+      { label: "URLs", value: String(isIndex ? sitemapCount : Math.max(urlCount, locCount)) },
+      { label: "locs", value: String(locCount) }
+    );
+    const identity = isIndex ? "XML sitemap index" : "XML sitemap (urlset)";
+    const summaryMarkdown = [
+      `## ${identity}`,
+      "",
+      isIndex ? "A **sitemap index** lists other sitemap files for crawlers (Google Search Console, etc.)." : "A **urlset sitemap** lists page URLs for search-engine crawlers.",
+      "",
+      "### Checks",
+      ...checks.map((c) => `- ${c}`),
+      "",
+      "### Sample locations",
+      ...locs.length ? locs.map((u) => `- ${u}`) : ["- (none in sample)"]
+    ].join("\n");
+    return { identity, facts, checks, metrics, summaryMarkdown };
+  }
+  if (local === "rss" || local === "feed" || /<rss\b/i.test(sample) || /<feed\b[^>]*xmlns=["'][^"']*Atom/i.test(sample)) {
+    const isAtom = local === "feed" || /<feed\b/i.test(sample);
+    const items = isAtom ? countMatches(sample, /<entry\b/i) : countMatches(sample, /<item\b/i);
+    const title = sample.match(/<title[^>]*>\s*([^<]+?)\s*<\/title>/i)?.[1]?.trim() ?? null;
+    facts.push(
+      isAtom ? "Looks like an Atom feed." : "Looks like an RSS feed.",
+      `Entry/item count in sample: ${items}.`
+    );
+    if (title) facts.push(`Feed title: ${title}`);
+    checks.push(
+      items > 0 ? "Contains entries/items in the sample." : "No entries/items visible \u2014 empty feed or truncated sample."
+    );
+    metrics.push(
+      { label: "Format", value: isAtom ? "Atom" : "RSS" },
+      { label: "Items", value: String(items) }
+    );
+    const identity = isAtom ? "Atom feed" : "RSS feed";
+    return {
+      identity,
+      facts,
+      checks,
+      metrics,
+      summaryMarkdown: [
+        `## ${identity}`,
+        "",
+        title ? `**Title:** ${title}` : "",
+        "",
+        "### Checks",
+        ...checks.map((c) => `- ${c}`)
+      ].filter(Boolean).join("\n")
+    };
+  }
+  if (name.endsWith(".svg") || local === "svg") {
+    const w = sample.match(/\bwidth=["']([^"']+)["']/i)?.[1];
+    const h = sample.match(/\bheight=["']([^"']+)["']/i)?.[1];
+    const vb = sample.match(/\bviewBox=["']([^"']+)["']/i)?.[1];
+    facts.push("Scalable Vector Graphics document.");
+    if (w || h) facts.push(`width=${w ?? "?"} height=${h ?? "?"}`);
+    if (vb) facts.push(`viewBox=${vb}`);
+    checks.push(
+      /<svg\b/i.test(sample) ? "Has an <svg> root." : "Missing <svg> root in sample."
+    );
+    metrics.push({ label: "Format", value: "SVG" });
+    return {
+      identity: "SVG image markup",
+      facts,
+      checks,
+      metrics,
+      summaryMarkdown: [
+        "## SVG",
+        "",
+        "Vector graphic markup. Prefer Source edit + a short Overview; Hex is useless here.",
+        "",
+        "### Checks",
+        ...checks.map((c) => `- ${c}`)
+      ].join("\n")
+    };
+  }
+  if (name.endsWith(".xml") || name.endsWith(".plist") || sample.startsWith("<?xml") || sample.startsWith("<") && /<\/[A-Za-z_][\w:.-]*>/.test(sample)) {
+    const tags = [
+      ...new Set(
+        [...sample.matchAll(/<\s*([A-Za-z_][\w:.-]*)\b/g)].map(
+          (m) => m[1].toLowerCase()
+        )
+      )
+    ].slice(0, 12);
+    facts.push(
+      root ? `Root / first tag: <${root}>` : "No clear root tag.",
+      tags.length ? `Tags seen: ${tags.join(", ")}` : "Few tags parsed."
+    );
+    checks.push(
+      sample.includes("<?xml") ? "Has XML declaration." : "No XML declaration (optional but common)."
+    );
+    if (root && !sample.includes(`</${root.split(":").pop()}`)) {
+      checks.push("Closing root tag not found \u2014 sample may be truncated.");
+    }
+    metrics.push(
+      { label: "Root", value: root ?? "?" },
+      { label: "Tags", value: String(tags.length) }
+    );
+    return {
+      identity: root ? `XML document (<${root}>)` : "XML document",
+      facts,
+      checks,
+      metrics,
+      summaryMarkdown: [
+        `## XML${root ? ` \u2014 \`<${root}>\`` : ""}`,
+        "",
+        "Explain what this dialect is if recognizable (config, export, feed, \u2026). Surface structure on Overview; keep full markup on Source.",
+        "",
+        "### Checks",
+        ...checks.map((c) => `- ${c}`),
+        "",
+        "### Tags in sample",
+        tags.map((t) => `- \`${t}\``).join("\n") || "- (none)"
+      ].join("\n")
+    };
+  }
+  if (name === "robots.txt" || /^user-agent:/im.test(sample)) {
+    const agents = countMatches(sample, /^user-agent:/im);
+    const sitemaps = [
+      ...sample.matchAll(/^sitemap:\s*(\S+)/gim)
+    ].map((m) => m[1]);
+    facts.push(`User-agent directives: ${agents}.`);
+    if (sitemaps.length) facts.push(`Sitemap refs: ${sitemaps.join(", ")}`);
+    checks.push(
+      agents > 0 ? "Has User-agent rules." : "No User-agent line \u2014 may be incomplete."
+    );
+    metrics.push(
+      { label: "Agents", value: String(agents) },
+      { label: "Sitemaps", value: String(sitemaps.length) }
+    );
+    return {
+      identity: "robots.txt",
+      facts,
+      checks,
+      metrics,
+      summaryMarkdown: [
+        "## robots.txt",
+        "",
+        "Crawler policy file. Overview should list agents + sitemap URLs; Source is the editable body.",
+        "",
+        "### Checks",
+        ...checks.map((c) => `- ${c}`),
+        ...sitemaps.length ? ["", "### Sitemap references", ...sitemaps.map((u) => `- ${u}`)] : []
+      ].join("\n")
+    };
+  }
+  if (name.endsWith(".json") || name.endsWith(".jsonl") || name.endsWith(".jsonc") || sample.startsWith("{") || sample.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(sample);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const keys = Object.keys(parsed).slice(0, 16);
+        facts.push(`JSON object with keys: ${keys.join(", ") || "(none)"}`);
+        metrics.push({ label: "Keys", value: String(keys.length) });
+        checks.push("Parses as JSON object.");
+      } else if (Array.isArray(parsed)) {
+        facts.push(`JSON array length ${parsed.length} (in sample).`);
+        metrics.push({ label: "Items", value: String(parsed.length) });
+        checks.push("Parses as JSON array.");
+      } else {
+        checks.push("Parses as JSON primitive.");
+      }
+    } catch {
+      checks.push("Sample does not parse as JSON (truncated or JSONC/JSONL).");
+      facts.push("Treat as JSON-like text; show pretty Source if possible.");
+    }
+    return {
+      identity: "JSON",
+      facts,
+      checks,
+      metrics,
+      summaryMarkdown: [
+        "## JSON",
+        "",
+        "### Checks",
+        ...checks.map((c) => `- ${c}`),
+        "",
+        "### Facts",
+        ...facts.map((f) => `- ${f}`)
+      ].join("\n")
+    };
+  }
+  if (name.endsWith(".edn") || name.endsWith(".clj") || /^\s*[;({[]/.test(sample) && /:\w+/.test(sample)) {
+    const keys = [
+      ...new Set(
+        [...sample.matchAll(/:([a-zA-Z_][\w-]*)/g)].map((m) => `:${m[1]}`)
+      )
+    ].slice(0, 16);
+    facts.push(
+      keys.length ? `Keyword-like keys: ${keys.join(", ")}` : "EDN/Clojure-like text."
+    );
+    checks.push("Not validated by a full EDN parser \u2014 structural skim only.");
+    metrics.push({ label: "Keys", value: String(keys.length) });
+    return {
+      identity: "EDN / Clojure data",
+      facts,
+      checks,
+      metrics,
+      summaryMarkdown: [
+        "## EDN / Clojure data",
+        "",
+        "### Top-level keywords (heuristic)",
+        ...keys.map((k) => `- \`${k}\``),
+        "",
+        "### Checks",
+        ...checks.map((c) => `- ${c}`)
+      ].join("\n")
+    };
+  }
+  const lines = sample.split(/\r?\n/).length;
+  facts.push(`~${lines} lines in sample.`, `First line: ${sample.split(/\r?\n/)[0]?.slice(0, 80) ?? ""}`);
+  metrics.push({ label: "Lines", value: String(lines) });
+  return {
+    identity: "text document",
+    facts,
+    checks: ["No specialized dialect detected \u2014 still prefer Overview + Source over Hex."],
+    metrics,
+    summaryMarkdown: [
+      "## Text file",
+      "",
+      ...facts.map((f) => `- ${f}`)
+    ].join("\n")
+  };
+}
 function detectContentKind(filename, sampleText) {
   const name = filename.toLowerCase();
   const sample = sampleText?.trim() ?? "";
+  const root = xmlLocalName(xmlRootTag(sample));
+  if (name.includes("sitemap") || root === "urlset" || root === "sitemapindex" || /sitemaps\.org\/schemas\/sitemap/i.test(sample)) {
+    return {
+      kind: "XML sitemap",
+      language: "xml",
+      wantHex: false,
+      hint: "Mini-app: Tabs Overview | Structure | Source. Overview = MarkdownView bound to /summary (what a sitemap is + Checks + first <loc> URLs as a list). Structure = Badges/Metrics for urlset vs index, URL count, namespace OK/warn Alerts. Source = Textarea /body with full sample. DO NOT add a Hex tab."
+    };
+  }
+  if (root === "rss" || root === "feed" || /<rss\b/i.test(sample) || /<feed\b/i.test(sample)) {
+    return {
+      kind: "RSS/Atom feed",
+      language: "xml",
+      wantHex: false,
+      hint: "Mini-app: Tabs Overview (MarkdownView /summary: feed title, item count, checks) | Items (Badges or Text list of titles from sample) | Source (Textarea /body). No Hex."
+    };
+  }
+  if (name.endsWith(".svg") || root === "svg") {
+    return {
+      kind: "SVG",
+      language: "svg",
+      wantHex: false,
+      hint: "Mini-app: Tabs Overview (size/viewBox Metrics + Alert) | Source (Textarea /body). No Hex."
+    };
+  }
+  if (name === "robots.txt" || /^user-agent:/im.test(sample)) {
+    return {
+      kind: "robots.txt",
+      language: "text",
+      wantHex: false,
+      hint: "Mini-app: Tabs Overview (MarkdownView /summary: agents + sitemap URLs) | Edit (Textarea /body). No Hex."
+    };
+  }
   if (name.endsWith(".edn") || name.endsWith(".clj") || name.endsWith(".cljs") || /^\s*[;({[]/.test(sample) && /:\w+/.test(sample)) {
     return {
       kind: "edn/clojure config",
       language: "edn",
-      hint: "Mini-app: Tabs Text (editable Textarea bound to /body) | Hex | Structure (Alert or Badges for top-level keys like :app/:format). Put full sample in state.body."
+      wantHex: false,
+      hint: "Mini-app: Tabs Overview (MarkdownView /summary + Badges for :keys) | Edit (Textarea /body) | Notes (Alert with checks). Put sample in state.body and analysis summary in state.summary. No Hex unless binary."
     };
   }
   if (name.endsWith(".toml") || name.endsWith(".ini") || name.endsWith(".cfg") || name.endsWith(".conf") || name.endsWith(".properties")) {
     return {
       kind: "toml/ini config",
       language: name.endsWith(".properties") ? "properties" : "toml",
-      hint: "Mini-app: Tabs Overview (Badge/Text for section keys) | Edit (Textarea /body) | Raw. Prefer editing over a static dump."
+      wantHex: false,
+      hint: "Mini-app: Tabs Overview (section keys as Badges + checks Alert) | Edit (Textarea /body) | Raw optional. Prefer editing over a static dump. No Hex."
     };
   }
   if (name.endsWith(".yaml") || name.endsWith(".yml")) {
     return {
       kind: "yaml",
       language: "yaml",
-      hint: "Mini-app: Tabs Overview | Edit (Textarea /body) | Raw. Surface top-level keys as Badges."
+      wantHex: false,
+      hint: "Mini-app: Tabs Overview (top-level keys Badges + MarkdownView /summary) | Edit (Textarea /body). No Hex."
     };
   }
   if (name.endsWith(".json") || name.endsWith(".jsonl") || name.endsWith(".jsonc") || sample.startsWith("{") || sample.startsWith("[")) {
     return {
       kind: "json",
       language: "json",
-      hint: "Mini-app: Tabs Overview (Metric/Badge for key fields) | Edit (Textarea with pretty JSON in /body) | Raw. Not a single Markdown dump."
+      wantHex: false,
+      hint: "Mini-app: Tabs Overview (Metric/Badge for key fields + MarkdownView /summary with checks) | Edit (Textarea pretty JSON /body). Not a single Markdown dump. No Hex."
     };
   }
-  if (name.endsWith(".xml") || name.endsWith(".html") || name.endsWith(".htm") || name.endsWith(".svg") || sample.startsWith("<")) {
+  if (name.endsWith(".xml") || name.endsWith(".plist") || name.endsWith(".html") || name.endsWith(".htm") || sample.startsWith("<") || sample.startsWith("<?xml")) {
     return {
-      kind: "markup",
-      language: name.endsWith(".svg") ? "svg" : "xml",
-      hint: "Mini-app: Tabs Preview (MarkdownView fenced) | Edit (Textarea /body) | Notes (Alert). Keep editable."
+      kind: "markup/xml",
+      language: name.endsWith(".html") || name.endsWith(".htm") ? "html" : "xml",
+      wantHex: false,
+      hint: "Mini-app: Tabs Overview (MarkdownView /summary explaining the dialect + checks) | Structure (Badges for root/tags) | Source (Textarea /body). Hex is wrong for XML \u2014 omit it."
     };
   }
   if (/\.lhs$/i.test(name)) {
     return {
       kind: "literate haskell",
       language: "haskell",
-      hint: "Mini-app: Tabs Code (bird '>' lines stripped into Textarea /code) | Literate (full /body) | Notes (Alert). Both texts in Spec.state."
+      wantHex: false,
+      hint: "Mini-app: Tabs Overview | Code (bird '>' lines stripped into Textarea /code) | Literate (full /body). Both texts in Spec.state."
     };
   }
   if (/\.hs$/i.test(name)) {
     return {
       kind: "haskell",
       language: "haskell",
-      hint: "Mini-app: Tabs Code (Textarea /body) | Exports (Badges) | Raw."
+      wantHex: false,
+      hint: "Mini-app: Tabs Overview (exports as Badges) | Code (Textarea /body)."
     };
   }
   if (/\.(ts|tsx|js|jsx|mjs|cjs|py|go|rs|java|kt|c|h|cpp|hpp|cs|rb|php|swift|sql|css|scss|sh|bash|zsh|lua|r|pl)$/i.test(
@@ -327,13 +661,15 @@ function detectContentKind(filename, sampleText) {
     return {
       kind: "source code",
       language,
-      hint: `Mini-app: Tabs Code (Textarea /body for ${language}) | Symbols (Badges) | Raw.`
+      wantHex: false,
+      hint: `Mini-app: Tabs Overview (language + rough symbols as Badges) | Code (Textarea /body for ${language}). No Hex.`
     };
   }
   if (name.endsWith(".md") || name.endsWith(".markdown") || name.endsWith(".rst") || name.endsWith(".adoc")) {
     return {
       kind: "markdown",
       language: "markdown",
+      wantHex: false,
       hint: "Mini-app: Tabs Preview (MarkdownView bound to /body) | Edit (Textarea same /body)."
     };
   }
@@ -341,36 +677,44 @@ function detectContentKind(filename, sampleText) {
     return {
       kind: "log",
       language: "text",
-      hint: "Mini-app: Tabs Log (Textarea /body) | Hex | Notes (Alert with line count / size)."
+      wantHex: false,
+      hint: "Mini-app: Tabs Overview (line count / size Metrics + Alert) | Log (Textarea /body)."
     };
   }
   if (name.endsWith(".plist") || name.endsWith(".strings") || name.endsWith(".env") || name.endsWith(".env.example")) {
     return {
       kind: "env/plist",
       language: "text",
-      hint: "Mini-app: Tabs Edit (Textarea /body) | Hex | Notes. Never invent fake secrets \u2014 use the sample only."
+      wantHex: false,
+      hint: "Mini-app: Tabs Overview (checks Alert) | Edit (Textarea /body). Never invent fake secrets \u2014 use the sample only."
     };
   }
   if (sample.length > 0) {
     return {
       kind: "text",
       language: "text",
-      hint: "Mini-app: Tabs Text (Textarea /body) | Hex (Text or Textarea /hex from hexPreview). Avoid a single static paragraph."
+      wantHex: false,
+      hint: "Mini-app: Tabs Overview (MarkdownView /summary) | Text (Textarea /body). Avoid Hex for readable text."
     };
   }
   return {
     kind: "binary/unknown",
     language: "bin",
+    wantHex: true,
     hint: "Mini-app: Tabs Hex (Textarea /hex) | Meta (Badges for mime/size + Alert). No fake text decode."
   };
 }
 var FEW_SHOTS = `
-EXAMPLE (config / text \u2014 follow this shape; replace bodies from the real sample):
-{"op":"set","path":"/state","value":{"activeTab":"text","body":"(file sample here)","hex":"(hex preview here)"}}
+EXAMPLE (structured document like sitemap/XML/JSON \u2014 Overview + Source; NO Hex):
+{"op":"set","path":"/state","value":{"activeTab":"overview","summary":"## XML sitemap\\n\\n- Type: urlset\\n- URLs: 12\\n\\n### Checks\\n- Namespace OK","body":"(full file sample)"}}
 {"op":"add","path":"/elements/card","value":{"type":"Card","props":{"title":null,"description":null,"maxWidth":"full","centered":null},"children":["tabs"]}}
-{"op":"add","path":"/elements/tabs","value":{"type":"Tabs","props":{"defaultValue":"text","value":{"$bindState":"/activeTab"},"tabs":[{"label":"Text","value":"text"},{"label":"Hex","value":"hex"}]},"children":["paneText","paneHex"]}}
-{"op":"add","path":"/elements/paneText","value":{"type":"Textarea","props":{"label":"Contents","name":"body","placeholder":null,"rows":12,"value":{"$bindState":"/body"},"checks":null,"validateOn":null},"children":[]}}
-{"op":"add","path":"/elements/paneHex","value":{"type":"Textarea","props":{"label":"Hex","name":"hex","placeholder":null,"rows":10,"value":{"$bindState":"/hex"},"checks":null,"validateOn":null},"children":[]}}
+{"op":"add","path":"/elements/tabs","value":{"type":"Tabs","props":{"defaultValue":"overview","value":{"$bindState":"/activeTab"},"tabs":[{"label":"Overview","value":"overview"},{"label":"Structure","value":"structure"},{"label":"Source","value":"source"}]},"children":["paneOverview","paneStructure","paneSource"]}}
+{"op":"add","path":"/elements/paneOverview","value":{"type":"MarkdownView","props":{"markdown":{"$bindState":"/summary"},"title":null},"children":[]}}
+{"op":"add","path":"/elements/paneStructure","value":{"type":"Stack","props":{"direction":"vertical","gap":"sm","align":null,"justify":null,"wrap":null},"children":["mType","mUrls","alertChecks"]}}
+{"op":"add","path":"/elements/mType","value":{"type":"Metric","props":{"label":"Type","value":"urlset","change":null,"changeType":null,"prefix":null,"suffix":null},"children":[]}}
+{"op":"add","path":"/elements/mUrls","value":{"type":"Metric","props":{"label":"URLs","value":"12","change":null,"changeType":null,"prefix":null,"suffix":null},"children":[]}}
+{"op":"add","path":"/elements/alertChecks","value":{"type":"Alert","props":{"title":"Checks","message":"Namespace present. Sample may be truncated.","type":"info"},"children":[]}}
+{"op":"add","path":"/elements/paneSource","value":{"type":"Textarea","props":{"label":"Source","name":"body","placeholder":null,"rows":14,"value":{"$bindState":"/body"},"checks":null,"validateOn":null},"children":[]}}
 {"op":"add","path":"/root","value":"card"}
 
 EXAMPLE (markdown \u2014 Preview + Edit sharing state):
@@ -385,25 +729,33 @@ function buildInventPrompt(input) {
   const sample = (input.sampleText ?? "").slice(0, 2400);
   const hex = input.hexPreview.slice(0, 800);
   const detected = detectContentKind(input.filename, input.sampleText);
+  const analysis = analyzeFileSample(
+    input.filename,
+    input.sampleText,
+    input.size
+  );
   const catalogPrompt = inventCatalog.prompt({
     mode: "standalone",
-    system: "You invent a small interactive json-render mini-app Spec for an unrecognized dropped file \u2014 not a static dump viewer.",
+    system: "You invent a useful interactive json-render mini-app for an unrecognized file \u2014 explain what it is, validate what you can, and surface the important bits. Never ship a generic text/hex dump when the file is structured text.",
     customRules: [
       `Only use these components: ${inventCatalog.componentNames.join(", ")}.`,
       "Never invent an emulator, CPU, disk controller, ROM runner, or game console.",
       "Never use InventedViewer, BinaryInspector, AudioPlayer, VideoPlayer, PdfViewer, PixelEditor, TrackerPlayer, Spreadsheet, or WebPageViewer.",
-      "Put file contents in Spec.state and bind Textarea / MarkdownView / Tabs via $bindState or $state. Every $bindState/$state path MUST appear in top-level state with a real initial value from the sample.",
-      'Example state: {"activeTab":"text","body":"\u2026","hex":"\u2026"}.',
-      "Build a MINI-APP: Tabs (preferred) or Accordion with \u22652 panes \u2014 e.g. Text|Hex, Preview|Edit, Overview|Raw.",
+      "Put derived explanation in state.summary (Markdown) and file body in state.body; bind MarkdownView\u2192/summary and Textarea\u2192/body. Every $bindState/$state path MUST exist in top-level state with real values from ANALYSIS / sample.",
+      'Example state: {"activeTab":"overview","summary":"## \u2026","body":"\u2026"}.',
+      "Preferred panes: Overview (what it is + checks) | Structure or Highlights (Metrics/Badges/Alerts) | Source (editable Textarea). Hex ONLY when ANALYSIS says binary / no text.",
       "Card is only a border shell (title/description null \u2014 window chrome already shows the name).",
-      "Do not invent fake file contents \u2014 copy from the sample (for .lhs Code tab, strip leading '>' bird tracks).",
-      "Use Badge, Alert, Heading, Text, Separator, Metric for structure.",
-      "Typical size: 6\u201314 elements. Forbidden: a 3-element Card\u2192Markdown\u2192Alert poster.",
+      "Do not invent fake file contents \u2014 copy body from the sample; copy/adapt summary from ANALYSIS.summaryMarkdown.",
+      "Use Badge, Alert, Heading, Text, Separator, Metric for structure and validation status.",
+      "Typical size: 8\u201316 elements. Forbidden: Card\u2192Markdown poster only; Forbidden for XML/JSON/YAML/sitemap: Tabs that are only Text|Hex.",
       "Every required props field must be present (null where nullable).",
       'Textarea/Input label must be a string (use "" if unlabeled), never null.',
       'Leaf elements must include "children": [].'
     ]
   });
+  const hexSection = detected.wantHex ? `Hex preview (include a Hex tab):
+${hex || "(empty)"}` : `Hex preview (DO NOT add a Hex tab for this file \u2014 structured/readable text):
+${hex.slice(0, 120) || "(empty)"}`;
   return `${catalogPrompt}
 
 ---
@@ -413,10 +765,20 @@ ${FEW_SHOTS}
 TASK
 Invent an interactive mini-app Spec for this file. Follow SpecStream JSONL from the catalog prompt (same shape as the examples).
 
-Goal: inspect AND work with the file (switch views, edit text, see highlights) \u2014 not a summary card.
+Goal: a domain-aware tool \u2014 name the format, run the listed checks, show pertinent counts/fields, and keep the full sample editable on Source. Not a summary card and not a hex dump.
 
 Detected: ${detected.kind} (language=${detected.language})
 App guidance: ${detected.hint}
+
+ANALYSIS (use these facts \u2014 put summaryMarkdown into state.summary, metrics into Metric/Badge props):
+- identity: ${analysis.identity}
+- facts:
+${analysis.facts.map((f) => `  - ${f}`).join("\n")}
+- checks:
+${analysis.checks.map((c) => `  - ${c}`).join("\n")}
+- metrics: ${JSON.stringify(analysis.metrics)}
+- summaryMarkdown:
+${analysis.summaryMarkdown}
 
 File metadata:
 - title: ${JSON.stringify(input.title)}
@@ -425,11 +787,10 @@ File metadata:
 - size: ${input.size} bytes
 - sourceUrl: ${JSON.stringify(input.sourceUrl ?? null)}
 
-Sample text (may be truncated; use as real content in state/props):
+Sample text (may be truncated; use as real content in state.body):
 ${sample || "(empty \u2014 binary or no decode)"}
 
-Hex preview (use in a Hex tab when useful):
-${hex || "(empty)"}
+${hexSection}
 `;
 }
 function buildInventRepairPrompt(options) {
@@ -444,7 +805,7 @@ ${options.errors}
 Previous output (truncate if needed \u2014 fix the issues, do not explain):
 ${options.previousOutput.slice(0, 3500)}
 
-Emit a corrected SpecStream JSONL only. Keep Tabs (\u22652) + Textarea bound to Spec.state with real sample/hex values. No poster Card\u2192Markdown dumps.
+Emit a corrected SpecStream JSONL only. Prefer Overview + Structure + Source with state.summary + state.body from ANALYSIS/sample. No poster dumps; no Text|Hex-only for structured text.
 `;
 }
 
@@ -1072,6 +1433,9 @@ function seedValueForPath(path, input, tabDefault) {
   const pretty = tryPrettyJson(sample);
   if (/^(active)?tab$/i.test(leaf) || leaf === "selectedtab") return tabDefault;
   if (/hex/i.test(leaf)) return input.hexPreview;
+  if (/summary|overview|about|checks/i.test(leaf)) {
+    return analyzeFileSample(input.filename, input.sampleText, input.size).summaryMarkdown;
+  }
   if (/keys|keywords|fields/i.test(leaf)) {
     return topLevelKeys(sample).join(", ") || "(none detected)";
   }
@@ -1106,6 +1470,13 @@ function hydrateInventedSpec(spec, input) {
   const tabDefault = defaultTabValue(spec);
   if (state.body === void 0 && (input.sampleText ?? "").length > 0) {
     state.body = tryPrettyJson(input.sampleText) ?? input.sampleText;
+  }
+  if (state.summary === void 0 && (input.sampleText ?? "").length > 0) {
+    state.summary = analyzeFileSample(
+      input.filename,
+      input.sampleText,
+      input.size
+    ).summaryMarkdown;
   }
   if (state.hex === void 0 && input.hexPreview) {
     state.hex = input.hexPreview;
@@ -1165,6 +1536,8 @@ function assessInventedSpecQuality(spec) {
   const hasTabs = types.has("Tabs");
   const hasAccordion = types.has("Accordion");
   const hasTextarea = types.has("Textarea");
+  const hasMarkdown = types.has("MarkdownView");
+  const hasMetricOrBadge = types.has("Metric") || types.has("Badge");
   if (!hasTabs && !hasAccordion) {
     issues.push({
       code: "no_panes",
@@ -1192,15 +1565,6 @@ function assessInventedSpecQuality(spec) {
       message: "Looks like a static dump (Card/Markdown/Text only). Add Tabs + Edit Textarea bound to Spec.state."
     });
   }
-  const state = spec.state ?? {};
-  const stateKeys = Object.keys(state);
-  const hasBind = JSON.stringify(spec.elements ?? {}).includes('"$bindState"') || JSON.stringify(spec.elements ?? {}).includes('"$state"');
-  if (!hasBind && stateKeys.length === 0) {
-    issues.push({
-      code: "no_state",
-      message: "No Spec.state and no $bindState/$state \u2014 put file contents in state and bind panes."
-    });
-  }
   if (hasTabs) {
     for (const el of elements) {
       if (el.type !== "Tabs") continue;
@@ -1209,6 +1573,17 @@ function assessInventedSpecQuality(spec) {
         issues.push({
           code: "tabs_thin",
           message: "Tabs must list at least two panes."
+        });
+        continue;
+      }
+      const labels = tabs.map(
+        (t) => String(t.label ?? t.value ?? "").toLowerCase()
+      );
+      const onlyTextHex = labels.length === 2 && labels.some((l) => /^(text|source|raw|body|contents)$/.test(l)) && labels.some((l) => /^hex/.test(l));
+      if (onlyTextHex) {
+        issues.push({
+          code: "text_hex_dump",
+          message: "Tabs are only Text|Hex \u2014 for structured files use Overview (what/checks) + Structure + Source instead of a hex dump."
         });
       }
       const kids = el.children ?? [];
@@ -1219,6 +1594,21 @@ function assessInventedSpecQuality(spec) {
         });
       }
     }
+  }
+  const state = spec.state ?? {};
+  const stateKeys = Object.keys(state);
+  const hasBind = JSON.stringify(spec.elements ?? {}).includes('"$bindState"') || JSON.stringify(spec.elements ?? {}).includes('"$state"');
+  if (!hasBind && stateKeys.length === 0) {
+    issues.push({
+      code: "no_state",
+      message: "No Spec.state and no $bindState/$state \u2014 put file contents in state and bind panes."
+    });
+  }
+  if (hasTabs && hasTextarea && !hasMarkdown && !hasMetricOrBadge && !types.has("Alert")) {
+    issues.push({
+      code: "no_overview",
+      message: "Add an Overview (MarkdownView /summary) or Structure Metrics/Badges/Alert explaining what the file is and basic checks."
+    });
   }
   return issues;
 }
@@ -1232,13 +1622,32 @@ function buildFallbackSpec(input) {
   const hasText = sample.length > 0;
   const body = hasText ? sample.slice(0, 6e3) : "";
   const hex = input.hexPreview.slice(0, 4e3) || "(no hex preview)";
+  const analysis = analyzeFileSample(input.filename, input.sampleText, input.size);
   if (hasText) {
+    const metricEls = {};
+    const metricIds = [];
+    for (const [i, m] of analysis.metrics.slice(0, 4).entries()) {
+      const id = `metric${i}`;
+      metricIds.push(id);
+      metricEls[id] = {
+        type: "Metric",
+        props: {
+          label: m.label,
+          value: m.value,
+          change: null,
+          changeType: null,
+          prefix: null,
+          suffix: null
+        },
+        children: []
+      };
+    }
     return {
       root: "card",
       state: {
-        activeTab: "text",
-        body,
-        hex
+        activeTab: "overview",
+        summary: analysis.summaryMarkdown,
+        body
       },
       elements: {
         card: {
@@ -1249,51 +1658,60 @@ function buildFallbackSpec(input) {
             maxWidth: "full",
             centered: null
           },
-          children: ["meta", "tabs"]
-        },
-        meta: {
-          type: "Text",
-          props: {
-            text: `${input.filename} \xB7 ${input.mimeType} \xB7 ${input.size} bytes`,
-            variant: "muted"
-          },
-          children: []
+          children: ["tabs"]
         },
         tabs: {
           type: "Tabs",
           props: {
-            defaultValue: "text",
+            defaultValue: "overview",
             value: { $bindState: "/activeTab" },
             tabs: [
-              { label: "Text", value: "text" },
-              { label: "Hex", value: "hex" }
+              { label: "Overview", value: "overview" },
+              { label: "Structure", value: "structure" },
+              { label: "Source", value: "source" }
             ]
           },
-          children: ["paneText", "paneHex"]
+          children: ["paneOverview", "paneStructure", "paneSource"]
         },
-        paneText: {
-          type: "Textarea",
+        paneOverview: {
+          type: "MarkdownView",
           props: {
-            label: "Contents",
-            name: "body",
-            placeholder: null,
-            rows: 12,
-            checks: null,
-            validateOn: null,
-            value: { $bindState: "/body" }
+            markdown: { $bindState: "/summary" },
+            title: null
           },
           children: []
         },
-        paneHex: {
+        paneStructure: {
+          type: "Stack",
+          props: {
+            direction: "vertical",
+            gap: "sm",
+            align: null,
+            justify: null,
+            wrap: null
+          },
+          children: [...metricIds, "alertChecks"]
+        },
+        ...metricEls,
+        alertChecks: {
+          type: "Alert",
+          props: {
+            title: analysis.identity,
+            message: analysis.checks.slice(0, 3).join(" ") || analysis.facts[0] || "",
+            type: "info"
+          },
+          children: []
+        },
+        paneSource: {
           type: "Textarea",
           props: {
-            label: "Hex",
-            name: "hex",
+            label: "Source",
+            name: "body",
             placeholder: null,
-            rows: 10,
+            rows: 14,
             checks: null,
             validateOn: null,
-            value: { $bindState: "/hex" }
+            value: { $bindState: "/body" }
           },
           children: []
         }

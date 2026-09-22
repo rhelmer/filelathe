@@ -239,24 +239,44 @@ export function WindowChrome({
     );
   }
 
+  // Keep one tree when minimized so media elements don't remount/pause.
+  // Park off-screen at real size — collapsing to 1×1 often pauses playback.
   return (
     <div
       data-filelathe-window=""
       data-window-title={title}
-      className={`pointer-events-auto absolute flex flex-col overflow-hidden rounded-xl border bg-card shadow-xl ${
-        active ? "ring-2 ring-primary/40" : ""
-      }`}
-      style={{
-        left: x,
-        top: y,
-        zIndex: z,
-        width,
-        height: minimized ? undefined : height,
-      }}
-      onMouseDown={onFocus}
+      data-minimized={minimized ? "" : undefined}
+      className={
+        minimized
+          ? "pointer-events-none fixed flex flex-col overflow-hidden opacity-0"
+          : `pointer-events-auto absolute flex flex-col overflow-hidden rounded-xl border bg-card shadow-xl ${
+              active ? "ring-2 ring-primary/40" : ""
+            }`
+      }
+      style={
+        minimized
+          ? {
+              left: -10_000,
+              top: 0,
+              zIndex: 0,
+              width,
+              height,
+            }
+          : {
+              left: x,
+              top: y,
+              zIndex: z,
+              width,
+              height,
+            }
+      }
+      aria-hidden={minimized || undefined}
+      onMouseDown={minimized ? undefined : onFocus}
     >
       <div
         className={`flex touch-none select-none items-center gap-1 border-b bg-muted/50 active:cursor-grabbing ${
+          minimized ? "hidden" : ""
+        } ${
           touchUi
             ? "min-h-12 cursor-grab gap-0.5 px-1 py-1.5"
             : "cursor-grab px-2 py-2"
@@ -306,12 +326,12 @@ export function WindowChrome({
         )}
         <button
           type="button"
-          aria-label={minimized ? "Restore" : "Minimize"}
+          aria-label="Minimize"
           className={chromeButton}
           onClick={onMinimize}
-          title={minimized ? "Restore" : "Minimize"}
+          title="Minimize to dock"
         >
-          {minimized ? "▢" : "–"}
+          –
         </button>
         {!touchUi ? (
           <button
@@ -334,15 +354,13 @@ export function WindowChrome({
           ×
         </button>
       </div>
-      {!minimized ? (
-        <div
-          className={`relative min-h-0 flex-1 overflow-auto ${
-            touchUi ? "p-3 text-base" : "p-4"
-          }`}
-        >
-          {children}
-        </div>
-      ) : null}
+      <div
+        className={`relative min-h-0 flex-1 overflow-auto ${
+          touchUi ? "p-3 text-base" : "p-4"
+        }`}
+      >
+        {children}
+      </div>
       {!minimized && !maximized ? (
         <div
           className={`absolute bottom-0 right-0 cursor-se-resize touch-none ${

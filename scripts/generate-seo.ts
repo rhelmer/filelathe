@@ -25,6 +25,14 @@ function esc(text: string) {
     .replace(/"/g, "&quot;");
 }
 
+/** Umami auto-tracks clicks on elements with data-umami-event. */
+function seoCtaAttrs(from: string, format?: string) {
+  const formatAttr = format
+    ? ` data-umami-event-format="${esc(format)}"`
+    : "";
+  return `data-umami-event="seo_cta_click" data-umami-event-from="${esc(from)}"${formatAttr}`;
+}
+
 function layout(options: {
   title: string;
   description: string;
@@ -36,6 +44,8 @@ function layout(options: {
   const jsonLd = Array.isArray(options.jsonLd)
     ? options.jsonLd
     : [options.jsonLd];
+  const fromPath =
+    options.canonicalPath.replace(/^\/|\/$/g, "") || "home";
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -75,7 +85,7 @@ function layout(options: {
         <nav>
           <a href="/formats/">Formats</a>
           <a href="/guides/">Guides</a>
-          <a class="cta-link" href="/">Open app</a>
+          <a class="cta-link" href="/" ${seoCtaAttrs(`${fromPath}/nav`)}>Open app</a>
         </nav>
       </header>
       ${options.body}
@@ -84,6 +94,12 @@ function layout(options: {
         <p><a href="/formats/">All formats</a> · <a href="/guides/">Guides</a> · <a href="/sitemap.xml">Sitemap</a></p>
       </footer>
     </div>
+    <script
+      defer
+      src="https://analytics.filelathe.com/script.js"
+      data-website-id="d541d56b-db29-4768-90a9-7e5f80731512"
+      data-performance="true"
+    ></script>
   </body>
 </html>
 `;
@@ -129,7 +145,7 @@ function formatPage(format: SeoFormat) {
       <p class="eyebrow">.${esc(format.ext)} · ${esc(format.name)}</p>
       <h1>${esc(h1)}</h1>
       <p class="lede">${esc(format.description)}</p>
-      <p><a class="btn" href="/">Open in Filelathe</a></p>
+      <p><a class="btn" href="/" ${seoCtaAttrs(`open/${format.slug}`, format.ext)}>Open in Filelathe</a></p>
 
       <section>
         <h2>How it works</h2>
@@ -218,7 +234,7 @@ function guidePage(guide: SeoGuide) {
       <p class="eyebrow">Guide</p>
       <h1>${esc(guide.title)}</h1>
       <p class="lede">${esc(guide.description)}</p>
-      <p><a class="btn" href="/">Try Filelathe</a></p>
+      <p><a class="btn" href="/" ${seoCtaAttrs(`guides/${guide.slug}`)}>Try Filelathe</a></p>
       ${guide.sections
         .map(
           (section) => `
@@ -288,7 +304,7 @@ function formatsHub() {
   const body = `
     <main>
       <h1>Formats you can open in Filelathe</h1>
-      <p class="lede">Dedicated players and viewers for common types — plus invented mini-apps for formats most converters ignore. Pick an extension or <a href="/">drop a file</a>.</p>
+      <p class="lede">Dedicated players and viewers for common types — plus invented mini-apps for formats most converters ignore. Pick an extension or <a href="/" ${seoCtaAttrs("formats")}>drop a file</a>.</p>
       ${sections}
       <section>
         <h2>Guides</h2>

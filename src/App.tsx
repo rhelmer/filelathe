@@ -2,7 +2,15 @@ import { useEffect, useId, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { Spec } from "@json-render/core";
 import { JSONUIProvider, Renderer } from "@json-render/react";
+import {
+  classifyOpenError,
+  extensionFromFilename,
+  track,
+  type FileOpenSource,
+  type InventOutcome,
+} from "./analytics";
 import { readApiError, toastMessageForApiError } from "./api-error";
+import { AppDock } from "./AppDock";
 import { fetchedToFile, type FetchedResource } from "./fetch-resource";
 import {
   labelForKind,
@@ -24,6 +32,8 @@ import {
   reviveWindow,
   saveSession,
 } from "./session-store";
+import { clearMediaPlayback, setMediaPlayback } from "./media-playback";
+import { MediaPlaybackProvider } from "./media-playback-context";
 import { getModule } from "./module-store";
 import { getArchive, setArchiveOpener } from "./archive-store";
 import { matchPlayers, plannedPlayer } from "./players";
@@ -67,8 +77,32 @@ type PopoutEntry = {
   timer: ReturnType<typeof setInterval>;
 };
 
+/** Structural workspace edits only (open / close) — not move / min / max. */
+type HistoryEntry = {
+  kind: "open" | "close";
+  window: WindowItem;
+  previousActiveId: string | null;
+};
+
 const DEFAULT_W = 560;
 const DEFAULT_H = 520;
+const MAX_HISTORY = 40;
+
+function isEditableKeyboardTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  const tag = target.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+}
+
+function historyLabel(entry: HistoryEntry | undefined, action: "Undo" | "Redo") {
+  if (!entry) return action;
+  const name = entry.window.file.filename;
+  if (entry.kind === "close") {
+    return action === "Undo" ? `Undo close · ${name}` : `Redo close · ${name}`;
+  }
+  return action === "Undo" ? `Undo open · ${name}` : `Redo open · ${name}`;
+}
 
 function nextOffset(count: number) {
   const step = 28;
@@ -86,12 +120,34 @@ function copyStylesTo(targetDoc: Document) {
   }
 }
 
-function WindowBody({ spec }: { spec: Spec }) {
+function WindowBody({
+  spec,
+  playbackKey,
+}: {
+  spec: Spec;
+  playbackKey: string;
+}) {
   return (
-    <JSONUIProvider registry={registry} initialState={spec.state ?? {}}>
-      <Renderer spec={spec} registry={registry} />
-    </JSONUIProvider>
+    <MediaPlaybackProvider playbackKey={playbackKey}>
+      <div data-filelathe-playback={playbackKey}>
+        <JSONUIProvider registry={registry} initialState={spec.state ?? {}}>
+          <Renderer spec={spec} registry={registry} />
+        </JSONUIProvider>
+      </div>
+    </MediaPlaybackProvider>
   );
+}
+
+/** Snapshot live media elements into the playback store before remounting. */
+function flushPlaybackFromDom(playbackKey: string, doc: Document = document) {
+  const root = doc.querySelector(`[data-filelathe-playback="${playbackKey}"]`);
+  if (!root) return;
+  const media = root.querySelector("audio, video") as HTMLMediaElement | null;
+  if (!media) return;
+  setMediaPlayback(playbackKey, {
+    currentTime: media.currentTime,
+    playing: !media.paused && !media.ended,
+  });
 }
 
 export function App() {
@@ -103,6 +159,14 @@ export function App() {
   const popoutsRef = useRef(new Map<string, PopoutEntry>());
   const [activeId, setActiveId] = useState<string | null>(null);
   const [zTop, setZTop] = useState(10);
+  const [undoStack, setUndoStack] = useState<HistoryEntry[]>([]);
+  const [redoStack, setRedoStack] = useState<HistoryEntry[]>([]);
+  const undoStackRef = useRef(undoStack);
+  undoStackRef.current = undoStack;
+  const redoStackRef = useRef(redoStack);
+  redoStackRef.current = redoStack;
+  const undoWorkspaceRef = useRef<() => void>(() => {});
+  const redoWorkspaceRef = useRef<() => void>(() => {});
   const [status, setStatus] = useState(
     "Drop a file or paste a URL — a new window opens for each one.",
   );
@@ -256,6 +320,12 @@ export function App() {
   useEffect(() => {
     return () => {
       for (const item of windowsRef.current) revokeLoadedFile(item.file);
+      for (const entry of undoStackRef.current) {
+        if (entry.kind === "close") revokeLoadedFile(entry.window.file);
+      }
+      for (const entry of redoStackRef.current) {
+        revokeLoadedFile(entry.window.file);
+      }
       for (const entry of popoutsRef.current.values()) {
         clearInterval(entry.timer);
         try {
@@ -267,6 +337,19 @@ export function App() {
       }
       popoutsRef.current.clear();
     };
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const mod = event.metaKey || event.ctrlKey;
+      if (!mod || event.key.toLowerCase() !== "z") return;
+      if (isEditableKeyboardTarget(event.target)) return;
+      event.preventDefault();
+      if (event.shiftKey) redoWorkspaceRef.current();
+      else undoWorkspaceRef.current();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
   function focusWindow(id: string) {
@@ -293,24 +376,163 @@ export function App() {
     popoutsRef.current.delete(id);
   }
 
-  function closeWindow(id: string) {
-    closePopout(id);
-    setWindows((items) => {
-      const closing = items.find((item) => item.id === id);
-      if (closing) revokeLoadedFile(closing.file);
-      const remaining = items.filter((item) => item.id !== id);
-      setActiveId((current) => {
-        if (current !== id) return current;
-        return remaining.at(-1)?.id ?? null;
-      });
-      setStatus(
-        remaining.length
-          ? `Closed window · ${remaining.length} open`
-          : "Drop a file or paste a URL — a new window opens for each one.",
-      );
-      return remaining;
+  /** Release blob URLs / modules for a window that will never return. */
+  function disposeHeldWindow(item: WindowItem) {
+    closePopout(item.id);
+    clearMediaPlayback(item.id);
+    revokeLoadedFile(item.file);
+  }
+
+  function disposeHistoryEntry(entry: HistoryEntry) {
+    // Only revoke when this entry is the sole owner (window not on the desk).
+    // After undo-close the same object is live again and also sits on redo —
+    // clearing redo must not revoke it.
+    const stillLive = windowsRef.current.some((w) => w.id === entry.window.id);
+    if (!stillLive) disposeHeldWindow(entry.window);
+  }
+
+  function clearRedoStack() {
+    const doomed = redoStackRef.current;
+    if (!doomed.length) return;
+    for (const entry of doomed) disposeHistoryEntry(entry);
+    setRedoStack([]);
+  }
+
+  function pushUndo(entry: HistoryEntry) {
+    clearRedoStack();
+    setUndoStack((stack) => {
+      const next = [...stack, entry];
+      if (next.length <= MAX_HISTORY) return next;
+      const overflow = next.slice(0, next.length - MAX_HISTORY);
+      for (const old of overflow) disposeHistoryEntry(old);
+      return next.slice(-MAX_HISTORY);
     });
   }
+
+  function removeWindowFromDesk(id: string, options?: { recordHistory: boolean }) {
+    closePopout(id);
+    const items = windowsRef.current;
+    const closing = items.find((item) => item.id === id);
+    if (!closing) return;
+    if (options?.recordHistory !== false) {
+      pushUndo({
+        kind: "close",
+        window: { ...closing, poppedOut: false, minimized: false },
+        previousActiveId: activeIdRef.current,
+      });
+    }
+    const remaining = items.filter((item) => item.id !== id);
+    setWindows(remaining);
+    setActiveId((current) => {
+      if (current !== id) return current;
+      return remaining.at(-1)?.id ?? null;
+    });
+    setStatus(
+      remaining.length
+        ? `Closed window · ${remaining.length} open`
+        : "Drop a file or paste a URL — a new window opens for each one.",
+    );
+  }
+
+  function closeWindow(id: string) {
+    removeWindowFromDesk(id, { recordHistory: true });
+  }
+
+  function restoreWindowToDesk(
+    item: WindowItem,
+    previousActiveId: string | null,
+    asActive: boolean,
+  ) {
+    setWindows((items) => {
+      if (items.some((w) => w.id === item.id)) return items;
+      const z = zTopRef.current + 1;
+      setZTop(z);
+      const next = {
+        ...item,
+        z,
+        poppedOut: false,
+        minimized: false,
+      };
+      return [...items, next];
+    });
+    if (asActive) {
+      setActiveId(item.id);
+    } else {
+      setActiveId(previousActiveId);
+    }
+    setStatus(`Restored ${item.file.filename}`);
+  }
+
+  function undoWorkspace() {
+    const stack = undoStackRef.current;
+    const entry = stack[stack.length - 1];
+    if (!entry) return;
+    setUndoStack((s) => s.slice(0, -1));
+    if (entry.kind === "close") {
+      restoreWindowToDesk(entry.window, entry.previousActiveId, true);
+      setRedoStack((s) => [...s, entry]);
+      setStatus(`Undo close · ${entry.window.file.filename}`);
+      return;
+    }
+    // Undo open → park the window on the redo stack (no revoke).
+    closePopout(entry.window.id);
+    setWindows((items) => {
+      const live = items.find((w) => w.id === entry.window.id);
+      const parked = live
+        ? { ...live, poppedOut: false, minimized: false }
+        : entry.window;
+      setRedoStack((s) => [
+        ...s,
+        { ...entry, window: parked, previousActiveId: activeIdRef.current },
+      ]);
+      const remaining = items.filter((w) => w.id !== entry.window.id);
+      setActiveId((current) => {
+        if (current !== entry.window.id) return current;
+        return entry.previousActiveId &&
+          remaining.some((w) => w.id === entry.previousActiveId)
+          ? entry.previousActiveId
+          : (remaining.at(-1)?.id ?? null);
+      });
+      return remaining;
+    });
+    setStatus(`Undo open · ${entry.window.file.filename}`);
+  }
+
+  function redoWorkspace() {
+    const stack = redoStackRef.current;
+    const entry = stack[stack.length - 1];
+    if (!entry) return;
+    setRedoStack((s) => s.slice(0, -1));
+    if (entry.kind === "close") {
+      // Redo close → remove again, keep on undo.
+      closePopout(entry.window.id);
+      setWindows((items) => {
+        const live = items.find((w) => w.id === entry.window.id);
+        const parked = live
+          ? { ...live, poppedOut: false, minimized: false }
+          : entry.window;
+        setUndoStack((s) => [
+          ...s,
+          { ...entry, window: parked, previousActiveId: activeIdRef.current },
+        ]);
+        const remaining = items.filter((w) => w.id !== entry.window.id);
+        setActiveId((current) => {
+          if (current !== entry.window.id) return current;
+          return remaining.at(-1)?.id ?? null;
+        });
+        return remaining;
+      });
+      setStatus(`Redo close · ${entry.window.file.filename}`);
+      return;
+    }
+    // Redo open → bring window back.
+    restoreWindowToDesk(entry.window, entry.previousActiveId, true);
+    setUndoStack((s) => [...s, entry]);
+    setStatus(`Redo open · ${entry.window.file.filename}`);
+  }
+
+  undoWorkspaceRef.current = undoWorkspace;
+  redoWorkspaceRef.current = redoWorkspace;
 
   function patchWindow(id: string, patch: Partial<WindowItem>) {
     setWindows((items) =>
@@ -322,13 +544,40 @@ export function App() {
     setWindows((items) =>
       items.map((item) => {
         if (item.id !== id) return item;
+        const nextMinimized = !item.minimized;
         return {
           ...item,
-          minimized: !item.minimized,
-          maximized: item.minimized ? item.maximized : false,
+          minimized: nextMinimized,
+          maximized: nextMinimized ? false : item.maximized,
         };
       }),
     );
+    const item = windowsRef.current.find((w) => w.id === id);
+    if (item && !item.minimized) {
+      // Just minimized — leave focus; dock will show the tile.
+      setStatus(`Minimized ${item.file.filename} · restore from the dock`);
+    } else {
+      focusWindow(id);
+    }
+  }
+
+  function restoreFromDock(id: string) {
+    setWindows((items) =>
+      items.map((item) =>
+        item.id === id ? { ...item, minimized: false } : item,
+      ),
+    );
+    focusWindow(id);
+  }
+
+  /** Taskbar click: restore if minimized, otherwise just focus. */
+  function selectFromTaskbar(id: string) {
+    const item = windowsRef.current.find((w) => w.id === id);
+    if (!item) return;
+    if (item.minimized) {
+      restoreFromDock(id);
+      return;
+    }
     focusWindow(id);
   }
 
@@ -389,6 +638,8 @@ export function App() {
       return;
     }
 
+    flushPlaybackFromDom(item.id);
+
     const popW = Math.max(
       720,
       Math.min(Math.round(item.width), Math.round(window.screen.availWidth * 0.92)),
@@ -436,7 +687,7 @@ export function App() {
             </div>
           </header>
           <div className="min-h-0 flex-1 overflow-auto text-base">
-            <WindowBody spec={item.spec} />
+            <WindowBody spec={item.spec} playbackKey={item.id} />
           </div>
         </div>
       </ToastProvider>,
@@ -466,14 +717,19 @@ export function App() {
   }
 
   function dockWindow(id: string) {
+    const entry = popoutsRef.current.get(id);
+    if (entry && !entry.popup.closed) {
+      flushPlaybackFromDom(id, entry.popup.document);
+    }
     closePopout(id);
     patchWindow(id, { poppedOut: false });
     setStatus("Window docked back into the page.");
     focusWindow(id);
   }
 
-  async function composeAndOpen(file: LoadedFile) {
+  async function composeAndOpen(file: LoadedFile, source: FileOpenSource) {
     let toCompose = file;
+    let plannedInspect = false;
 
     if (file.kind === "unknown" && !file.inventedSpec) {
       const planned = plannedPlayer(
@@ -496,6 +752,7 @@ export function App() {
           setStatus(`Detected ${labelForKind(file.kind)} — routing…`);
         }
       } else {
+        plannedInspect = true;
         setStatus(
           `Detected ${planned.label} (planned) — inspector, not invent…`,
         );
@@ -514,10 +771,17 @@ export function App() {
     const data = (await response.json()) as ComposeResponse;
     if (!data.finalSpec) throw new Error("Compose returned no spec.");
     for (const warning of data.warnings ?? []) {
+      const lower = warning.toLowerCase();
+      const which = lower.includes("haiku")
+        ? "haiku"
+        : lower.includes("jev")
+          ? "jev"
+          : null;
+      if (which) track("api_degraded", { which });
       toast({
-        title: warning.toLowerCase().includes("haiku")
+        title: which === "haiku"
           ? "Haiku unavailable"
-          : warning.toLowerCase().includes("jev")
+          : which === "jev"
             ? "Jev unavailable"
             : "Using fallback",
         description: warning,
@@ -527,6 +791,33 @@ export function App() {
     }
 
     const opened = data.file ?? toCompose;
+    const ext = extensionFromFilename(opened.filename);
+    const inventSource =
+      opened.kind === "unknown" ? opened.inventSource ?? null : null;
+
+    track("file_opened", {
+      source,
+      kind: opened.kind,
+      ext,
+      route: data.route ?? "compose",
+      invent_source: inventSource ?? "none",
+    });
+
+    if (opened.kind === "unknown") {
+      let outcome: InventOutcome;
+      if (
+        inventSource === "haiku" ||
+        inventSource === "cache" ||
+        inventSource === "fallback"
+      ) {
+        outcome = inventSource;
+      } else if (plannedInspect || data.route === "inspect") {
+        outcome = "planned_inspector";
+      } else {
+        outcome = "fallback";
+      }
+      track("invent_result", { outcome, ext });
+    }
 
     if (
       opened.kind === "unknown" &&
@@ -547,60 +838,66 @@ export function App() {
       setSpecsRefresh((n) => n + 1);
     }
 
-    setWindows((items) => {
-      const offset = nextOffset(items.length);
-      const z = zTop + 1;
-      const id = `${idPrefix}-${Date.now()}-${items.length}`;
-      setZTop(z);
-      setActiveId(id);
-      const cacheBit =
-        opened.kind === "unknown" && opened.inventSource
-          ? ` · invent=${opened.inventSource}`
-          : "";
-      const routeBit = data.route ? ` · route=${data.route}` : "";
-      setStatus(
-        `Opened ${labelForKind(opened.kind)} · ${opened.filename} · stopReason=${data.stopReason ?? "?"}${cacheBit}${routeBit}`,
-      );
-      const touch = prefersTouchUi();
-      const margin = touch ? 8 : 24;
-      const openW = touch
-        ? Math.max(280, window.innerWidth - margin * 2)
-        : Math.min(DEFAULT_W, window.innerWidth - margin);
-      const openH = touch
-        ? Math.max(320, Math.round(window.innerHeight * 0.62))
-        : Math.min(DEFAULT_H, window.innerHeight - 48);
-      return [
-        ...items,
-        {
-          id,
-          file: opened,
-          spec: data.finalSpec!,
-          prompt: data.prompt ?? "",
-          x: touch ? margin : offset.x,
-          y: touch ? Math.max(72, offset.y) : offset.y,
-          z,
-          width: openW,
-          height: openH,
-          minimized: false,
-          maximized: false,
-          poppedOut: false,
-          restore: null,
-        },
-      ];
+    const items = windowsRef.current;
+    const offset = nextOffset(items.length);
+    const z = zTopRef.current + 1;
+    const id = `${idPrefix}-${Date.now()}-${items.length}`;
+    const previousActiveId = activeIdRef.current;
+    const touch = prefersTouchUi();
+    const margin = touch ? 8 : 24;
+    const openW = touch
+      ? Math.max(280, window.innerWidth - margin * 2)
+      : Math.min(DEFAULT_W, window.innerWidth - margin);
+    const openH = touch
+      ? Math.max(320, Math.round(window.innerHeight * 0.62))
+      : Math.min(DEFAULT_H, window.innerHeight - 48);
+    const openedWindow: WindowItem = {
+      id,
+      file: opened,
+      spec: data.finalSpec!,
+      prompt: data.prompt ?? "",
+      x: touch ? margin : offset.x,
+      y: touch ? Math.max(72, offset.y) : offset.y,
+      z,
+      width: openW,
+      height: openH,
+      minimized: false,
+      maximized: false,
+      poppedOut: false,
+      restore: null,
+    };
+    setZTop(z);
+    setActiveId(id);
+    const cacheBit =
+      opened.kind === "unknown" && opened.inventSource
+        ? ` · invent=${opened.inventSource}`
+        : "";
+    const routeBit = data.route ? ` · route=${data.route}` : "";
+    setStatus(
+      `Opened ${labelForKind(opened.kind)} · ${opened.filename} · stopReason=${data.stopReason ?? "?"}${cacheBit}${routeBit}`,
+    );
+    pushUndo({
+      kind: "open",
+      window: openedWindow,
+      previousActiveId,
     });
+    setWindows((prev) => [...prev, openedWindow]);
   }
 
-  const openFromFileRef = useRef<(raw: File | undefined) => void>(
-    () => undefined,
-  );
+  const openFromFileRef = useRef<
+    (raw: File | undefined, source: Exclude<FileOpenSource, "url">) => void
+  >(() => undefined);
 
   // ArchiveBrowser opens extracted entries through the normal drop path.
   useEffect(() => {
-    setArchiveOpener((file) => openFromFileRef.current(file));
+    setArchiveOpener((file) => openFromFileRef.current(file, "archive"));
     return () => setArchiveOpener(null);
   }, []);
 
-  async function openFromFile(raw: File | undefined) {
+  async function openFromFile(
+    raw: File | undefined,
+    source: Exclude<FileOpenSource, "url">,
+  ) {
     if (!raw) return; // picker cancel — stay quiet
     if (busyRef.current) {
       toast({
@@ -611,12 +908,17 @@ export function App() {
       });
       return;
     }
+    track("file_open", { source });
     setBusyFlag(true);
     setStatus(`Opening ${raw.name}…`);
     try {
       const file = await loadDroppedFile(raw);
-      await composeAndOpen(file);
+      await composeAndOpen(file, source);
     } catch (error) {
+      track("file_open_failed", {
+        source,
+        reason: classifyOpenError(error, "compose"),
+      });
       toastApiFailure(error);
       setStatus(error instanceof Error ? error.message : String(error));
     } finally {
@@ -636,8 +938,10 @@ export function App() {
       });
       return;
     }
+    track("file_open", { source: "url" });
     setBusyFlag(true);
     setStatus("Fetching URL…");
+    let stage: "fetch" | "compose" = "fetch";
     try {
       const response = await fetch("/api/fetch-resource", {
         method: "POST",
@@ -653,9 +957,14 @@ export function App() {
         file.kind === "unknown" || file.kind === "webpage"
           ? { ...file, sourceUrl: data.url }
           : file;
-      await composeAndOpen(withSource);
+      stage = "compose";
+      await composeAndOpen(withSource, "url");
       setUrlDraft("");
     } catch (error) {
+      track("file_open_failed", {
+        source: "url",
+        reason: classifyOpenError(error, stage),
+      });
       toastApiFailure(error);
       setStatus(error instanceof Error ? error.message : String(error));
     } finally {
@@ -681,7 +990,7 @@ export function App() {
   acceptDroppedPayloadRef.current = (dt: DataTransfer | null) => {
     const file = fileFromDataTransfer(dt);
     if (file) {
-      void openFromFile(file);
+      void openFromFile(file, "drop");
       return;
     }
     const uri =
@@ -695,6 +1004,7 @@ export function App() {
     const claimedFiles = Array.from(dt?.types ?? []).some(
       (t) => t === "Files" || t === "application/x-moz-file",
     );
+    track("file_open_failed", { source: "drop", reason: "drop_empty" });
     toast({
       title: "Couldn't read that drop",
       description: claimedFiles
@@ -743,7 +1053,7 @@ export function App() {
 
   return (
     <div className="relative min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top_left,oklch(0.96_0.02_95),transparent_45%),linear-gradient(180deg,oklch(0.99_0.005_95),oklch(0.95_0.01_95))]">
-      <div className="relative z-0 mx-auto flex max-w-5xl flex-col gap-4 px-4 py-8">
+      <div className="relative z-0 mx-auto flex max-w-5xl flex-col gap-4 px-4 py-8 pb-28">
         <header className="space-y-3">
           <div className="flex items-center gap-3">
             <FilelatheLogo className="h-12 w-12 shrink-0 text-primary" />
@@ -851,7 +1161,7 @@ export function App() {
                   });
                   return;
                 }
-                void openFromFile(next);
+                void openFromFile(next, "picker");
               }}
             />
           </div>
@@ -862,8 +1172,8 @@ export function App() {
         {windows.length === 0 ? (
           <p className="py-16 text-center text-sm text-muted-foreground">
             Windows float over the page once you drop a file or URL. Drag the
-            title bar to move, resize from the corner, or expand / minimize.
-            On phones, use Expand instead of pop-out.
+            title bar to move, resize from the corner, or minimize to the
+            taskbar. Undo close with ⌘Z / Ctrl+Z.
           </p>
         ) : null}
 
@@ -912,12 +1222,32 @@ export function App() {
             onPopOut={() => popOutWindow(item)}
             onDock={() => dockWindow(item.id)}
           >
-            {!item.poppedOut && !item.minimized ? (
-              <WindowBody spec={item.spec} />
+            {!item.poppedOut ? (
+              <WindowBody spec={item.spec} playbackKey={item.id} />
             ) : null}
           </WindowChrome>
         ))}
       </div>
+
+      <AppDock
+        tiles={windows
+          .filter((item) => !item.poppedOut)
+          .map((item) => ({
+            id: item.id,
+            title: item.file.title,
+            subtitle: item.file.filename,
+            kindLabel: labelForKind(item.file.kind),
+            minimized: item.minimized,
+            active: item.id === activeId,
+          }))}
+        canUndo={undoStack.length > 0}
+        canRedo={redoStack.length > 0}
+        undoLabel={historyLabel(undoStack.at(-1), "Undo")}
+        redoLabel={historyLabel(redoStack.at(-1), "Redo")}
+        onUndo={undoWorkspace}
+        onRedo={redoWorkspace}
+        onSelect={selectFromTaskbar}
+      />
     </div>
   );
 }

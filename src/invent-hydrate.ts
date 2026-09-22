@@ -1,5 +1,5 @@
 import type { Spec } from "@json-render/core";
-import type { InventInput } from "./invent-prompt";
+import { analyzeFileSample, type InventInput } from "./invent-prompt";
 
 function extractBirdCode(sample: string): string {
   return sample
@@ -119,6 +119,10 @@ function seedValueForPath(
 
   if (/^(active)?tab$/i.test(leaf) || leaf === "selectedtab") return tabDefault;
   if (/hex/i.test(leaf)) return input.hexPreview;
+  if (/summary|overview|about|checks/i.test(leaf)) {
+    return analyzeFileSample(input.filename, input.sampleText, input.size)
+      .summaryMarkdown;
+  }
   if (/keys|keywords|fields/i.test(leaf)) {
     return topLevelKeys(sample).join(", ") || "(none detected)";
   }
@@ -166,6 +170,13 @@ export function hydrateInventedSpec(spec: Spec, input: InventInput): Spec {
   // Always offer common seeds even if Haiku forgot to bind them
   if (state.body === undefined && (input.sampleText ?? "").length > 0) {
     state.body = tryPrettyJson(input.sampleText!) ?? input.sampleText;
+  }
+  if (state.summary === undefined && (input.sampleText ?? "").length > 0) {
+    state.summary = analyzeFileSample(
+      input.filename,
+      input.sampleText,
+      input.size,
+    ).summaryMarkdown;
   }
   if (state.hex === undefined && input.hexPreview) {
     state.hex = input.hexPreview;
