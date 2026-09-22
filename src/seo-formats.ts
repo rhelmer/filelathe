@@ -616,6 +616,42 @@ export const SEO_FORMATS: SeoFormat[] = [
       "ODT/ODS/ODP are ZIP packages. Filelathe reads content.xml in your tab and shows the extracted text plus the entry list — a quick read without LibreOffice.",
   },
   {
+    slug: "doc",
+    ext: "doc",
+    also: ["docx", "xls", "ppt", "msg"],
+    name: "Word document (DOC)",
+    capability: "view",
+    group: "archive",
+    description:
+      "Open classic .doc files in your browser. Filelathe reads the OLE compound file, lists streams, and peeks recoverable text — no Word install.",
+    blurb:
+      "Pre-2007 Word files are OLE Compound Files (not ZIP). Filelathe sniffs the D0 CF magic, lists streams like WordDocument, and surfaces readable text so .doc does not fall through to a hex dump.",
+  },
+  {
+    slug: "xls",
+    ext: "xls",
+    also: ["xlsx", "doc", "ppt", "csv"],
+    name: "Excel workbook (XLS)",
+    capability: "view",
+    group: "archive",
+    description:
+      "Open classic .xls workbooks in your browser. Filelathe treats them as OLE containers, lists streams, and peeks cell text locally.",
+    blurb:
+      "Excel 97–2003 .xls files are OLE Compound Files with a Workbook stream. Filelathe browses the container in your tab instead of mis-routing them as CSV or hex.",
+  },
+  {
+    slug: "ppt",
+    ext: "ppt",
+    also: ["pptx", "doc", "xls"],
+    name: "PowerPoint (PPT)",
+    capability: "view",
+    group: "archive",
+    description:
+      "Open classic .ppt decks in your browser. Filelathe lists OLE streams and peeks recoverable slide text locally.",
+    blurb:
+      "PowerPoint 97–2003 files are OLE Compound Files. Filelathe sniffs the container, lists streams such as PowerPoint Document, and shows a text peek without uploading the file.",
+  },
+  {
     slug: "gz",
     ext: "gz",
     also: ["tgz", "tar", "zip"],

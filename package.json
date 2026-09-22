@@ -13,8 +13,9 @@
     "list-candidates": "tsx src/list.ts",
     "file-smoke": "tsx --env-file=.env src/file-smoke.ts",
     "invent-smoke": "tsx src/invent-smoke.ts",
+    "archive-smoke": "tsx src/archive-smoke.ts",
     "check-types": "tsc --noEmit",
-    "verify": "pnpm check-types && pnpm invent-smoke && pnpm build",
+    "verify": "pnpm check-types && pnpm invent-smoke && pnpm archive-smoke && pnpm build",
     "demo:capture": "node scripts/social-media/capture-filelathe-demo.mjs"
   },
   "dependencies": {
@@ -26,6 +27,7 @@
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.36.1",
     "ai": "7.0.107",
+    "cfb": "^1.2.2",
     "chiptune3": "0.8.9",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

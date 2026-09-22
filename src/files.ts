@@ -103,7 +103,7 @@ export type LoadedFile =
       mimeType: string;
       size: number;
       archiveId: string;
-      /** Specific format id (zip, docx, odt, gzip, tar, tgz, …). */
+      /** Specific format id (zip, docx, odt, doc, xls, gzip, tar, tgz, …). */
       format: string;
       /** Human badge label. */
       formatLabel: string;
@@ -184,12 +184,15 @@ function detectKind(file: File): FileKind | "unknown" {
     name.endsWith(".jsonl")
   )
     return "json";
+  // Excel often labels CSV downloads as application/vnd.ms-excel; real .xls
+  // is an OLE compound file and must not take the delimited-text path.
   if (
     type === "text/csv" ||
     type === "text/tab-separated-values" ||
-    type === "application/vnd.ms-excel" ||
     name.endsWith(".csv") ||
-    name.endsWith(".tsv")
+    name.endsWith(".tsv") ||
+    (type === "application/vnd.ms-excel" &&
+      !/\.(xls|xlt|xlm|xlw)$/i.test(name))
   )
     return "csv";
   if (
@@ -528,19 +531,32 @@ export async function loadDroppedFile(file: File): Promise<LoadedFile> {
   }
 
   if (kind === "csv") {
-    const text = await file.text();
-    const delimiter = file.name.toLowerCase().endsWith(".tsv") ? "\t" : ",";
-    const { columns, rows } = parseDelimited(text, delimiter);
-    return {
-      kind: "csv",
-      title,
-      filename: file.name,
-      mimeType:
-        mimeType ||
-        (delimiter === "\t" ? "text/tab-separated-values" : "text/csv"),
-      columns,
-      rows,
-    };
+    // Safety net: some browsers label binary .xls as ms-excel (CSV MIME).
+    const head = new Uint8Array(
+      await file.slice(0, 8).arrayBuffer(),
+    );
+    const oleAsCsv =
+      head.length >= 8 &&
+      head[0] === 0xd0 &&
+      head[1] === 0xcf &&
+      head[2] === 0x11 &&
+      head[3] === 0xe0;
+    if (!oleAsCsv) {
+      const text = await file.text();
+      const delimiter = file.name.toLowerCase().endsWith(".tsv") ? "\t" : ",";
+      const { columns, rows } = parseDelimited(text, delimiter);
+      return {
+        kind: "csv",
+        title,
+        filename: file.name,
+        mimeType:
+          mimeType ||
+          (delimiter === "\t" ? "text/tab-separated-values" : "text/csv"),
+        columns,
+        rows,
+      };
+    }
+    // Fall through: re-read as unknown → OLE archive sniff below.
   }
 
   if (kind === "markdown") {

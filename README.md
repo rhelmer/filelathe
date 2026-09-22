@@ -58,7 +58,8 @@ drop / URL
     ▼
 detect FileKind (image, pdf, csv, tracker, archive, … or unknown)
     │
-    ├─ archive (zip/gzip/tar + odt/docx/xlsx/pptx/epub) → ArchiveBrowser
+    ├─ archive (zip/gzip/tar + odt/docx/xlsx/pptx/epub
+    │            + classic OLE doc/xls/ppt/msg) → ArchiveBrowser
     │        (list entries, peek document text, click-to-open an entry;
     │         container bytes stay client-side, never sent to Jev)
     │
