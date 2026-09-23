@@ -28,7 +28,9 @@ export type ContribPayload = {
   mimeType: string;
   filenameHint: string;
   sandboxKey: string;
-  scope: "content" | "extension";
+  scope: SandboxRecord["scope"];
+  /** Set for dialect templates (xml-sitemap), separate from the extension. */
+  dialect?: string;
   savedAt: string;
   /** Invent prompt with sample/hex sections redacted. */
   prompt?: string;
@@ -39,6 +41,10 @@ export type ContribPayload = {
 };
 
 export function contribFilename(record: SandboxRecord): string {
+  if (record.scope === "dialect" && record.dialect) {
+    const slug = record.dialect.replace(/[^a-z0-9._-]+/gi, "-");
+    return `${slug}.json`;
+  }
   const ext = (record.extension || "bin").replace(/[^a-z0-9._-]+/gi, "-");
   const hash = record.key.replace(/[^a-z0-9]+/gi, "-").slice(-16) || "spec";
   return `${ext}-${hash}.json`;
@@ -56,6 +62,7 @@ export function buildContribPayload(record: SandboxRecord): ContribPayload {
     filenameHint: `example.${ext}`,
     sandboxKey: record.key,
     scope: record.scope,
+    dialect: record.dialect,
     savedAt: new Date(record.savedAt).toISOString(),
     prompt: scrubPromptForContrib(record.prompt),
     spec: scrubSpecForContrib(record.spec),
@@ -97,16 +104,22 @@ export async function proposeSpecOnGithub(
 ): Promise<ProposeResult> {
   const filename = contribFilename(record);
   const body = contribJson(record);
-  const message = `Add Haiku mini-app for .${record.extension || "bin"}`;
+  const label = record.dialect ?? `.${record.extension || "bin"}`;
+  const message = `Add Haiku mini-app for ${label}`;
   const description = [
     "Contributed from a local Filelathe session (json-render Spec).",
     "",
+    record.dialect
+      ? `- Dialect: \`${record.dialect}\` (not the generic extension template)`
+      : null,
     `- Extension: \`.${record.extension || "bin"}\``,
     `- MIME: \`${record.mimeType}\``,
     "",
     "Dropped-file contents (samples, hex, Textarea bodies) were redacted before paste.",
     "Please review the mini-app Spec before merging.",
-  ].join("\n");
+  ]
+    .filter((line) => line !== null)
+    .join("\n");
 
   let copied = false;
   try {

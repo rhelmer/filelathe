@@ -1,6 +1,7 @@
 /** Persist Haiku/fallback invented Specs in IndexedDB for reuse across drops. */
 
 import type { Spec } from "@json-render/core";
+import { contentDialectId } from "./invent-prompt";
 
 const DB_NAME = "jev-invented-specs";
 const DB_VERSION = 1;
@@ -8,11 +9,20 @@ const STORE = "specs";
 
 export type SandboxInventedBy = "haiku" | "fallback";
 
+export type SandboxScope = "content" | "dialect" | "extension";
+
 export type SandboxRecord = {
   key: string;
-  /** content = exact sample match; extension = reusable template for that file type */
-  scope: "content" | "extension";
+  /**
+   * content = exact sample match.
+   * dialect = reusable template for a format narrower than the extension
+   * (xml-sitemap, not every .xml file).
+   * extension = reusable template for that extension+MIME.
+   */
+  scope: SandboxScope;
   extension: string;
+  /** Set when this file's format is narrower than its extension. */
+  dialect?: string;
   mimeType: string;
   filenameHint: string;
   spec: Spec;
@@ -81,6 +91,48 @@ export function sandboxExtensionKey(input: {
   return `ext:${ext}:${input.mimeType}`;
 }
 
+/** `kind:xml-sitemap` — null when the extension template is specific enough. */
+export function sandboxDialectKey(input: {
+  filename: string;
+  sampleText: string | null;
+}): string | null {
+  const dialect = contentDialectId(input.filename, input.sampleText);
+  return dialect ? `kind:${dialect}` : null;
+}
+
+/** Template written on save: dialect when set, otherwise extension+MIME. */
+export function sandboxTemplateTarget(input: {
+  filename: string;
+  mimeType: string;
+  sampleText: string | null;
+}): { scope: "dialect" | "extension"; key: string; dialect?: string } {
+  const dialect = contentDialectId(input.filename, input.sampleText);
+  if (dialect) {
+    return { scope: "dialect", key: `kind:${dialect}`, dialect };
+  }
+  return { scope: "extension", key: sandboxExtensionKey(input) };
+}
+
+/**
+ * Lookup order: exact content, then dialect, then extension.
+ * Dialect is preferred over extension so a sitemap Spec is not reused for
+ * generic XML when both records exist. Extension stays the fallback.
+ */
+export function orderedSandboxLookupKeys(input: {
+  contentKey: string;
+  filename: string;
+  mimeType: string;
+  sampleText: string | null;
+}): string[] {
+  const keys = [input.contentKey];
+  const template = sandboxTemplateTarget(input);
+  keys.push(template.key);
+  if (template.scope === "dialect") {
+    keys.push(sandboxExtensionKey(input));
+  }
+  return keys;
+}
+
 export async function getSandboxRecord(
   key: string,
 ): Promise<SandboxRecord | null> {
@@ -94,7 +146,7 @@ export async function getSandboxRecord(
   }
 }
 
-/** Prefer exact content match, then latest extension template. */
+/** Prefer exact content, then dialect, then extension template. */
 export async function lookupSandboxViewer(input: {
   filename: string;
   mimeType: string;
@@ -102,9 +154,12 @@ export async function lookupSandboxViewer(input: {
   hexPreview: string;
 }): Promise<SandboxRecord | null> {
   const contentKey = await sandboxContentKey(input);
-  const byContent = await getSandboxRecord(contentKey);
-  if (byContent) return byContent;
-  return getSandboxRecord(sandboxExtensionKey(input));
+  const keys = orderedSandboxLookupKeys({ ...input, contentKey });
+  for (const key of keys) {
+    const record = await getSandboxRecord(key);
+    if (record) return record;
+  }
+  return null;
 }
 
 export async function saveSandboxViewer(input: {
@@ -121,13 +176,14 @@ export async function saveSandboxViewer(input: {
   const ext = extensionOf(input.filename);
   const savedAt = Date.now();
   const contentKey = await sandboxContentKey(input);
-  const extensionKey = sandboxExtensionKey(input);
+  const template = sandboxTemplateTarget(input);
   const prompt = input.prompt ?? undefined;
 
   const contentRecord: SandboxRecord = {
     key: contentKey,
     scope: "content",
     extension: ext,
+    dialect: template.dialect,
     mimeType: input.mimeType,
     filenameHint: input.filename,
     spec: input.spec,
@@ -136,10 +192,13 @@ export async function saveSandboxViewer(input: {
     savedAt,
   };
 
-  const extensionRecord: SandboxRecord = {
-    key: extensionKey,
-    scope: "extension",
+  // Dialect files must not overwrite the extension template. A sitemap
+  // invent stays on `kind:xml-sitemap` and leaves `ext:xml:*` for generic XML.
+  const templateRecord: SandboxRecord = {
+    key: template.key,
+    scope: template.scope,
     extension: ext,
+    dialect: template.dialect,
     mimeType: input.mimeType,
     filenameHint: input.filename,
     spec: input.spec,
@@ -153,7 +212,7 @@ export async function saveSandboxViewer(input: {
     const tx = db.transaction(STORE, "readwrite");
     const store = tx.objectStore(STORE);
     store.put(contentRecord);
-    store.put(extensionRecord);
+    store.put(templateRecord);
     await new Promise<void>((resolve, reject) => {
       tx.oncomplete = () => resolve();
       tx.onerror = () =>
@@ -190,6 +249,35 @@ export async function deleteSandboxRecord(key: string): Promise<void> {
   } finally {
     db.close();
   }
+}
+
+/**
+ * Records to show in Saved mini-apps.
+ * A dialect template replaces its content snapshot in the list (that is the
+ * Spec safe to contribute). Extension templates stay visible unless a
+ * content snapshot for that extension+MIME is already shown — a dialect
+ * record does not hide the generic extension template.
+ */
+export function dedupeSandboxRecords(records: SandboxRecord[]): SandboxRecord[] {
+  const haiku = records.filter((r) => r.inventedBy === "haiku");
+  const dialects = haiku.filter((r) => r.scope === "dialect");
+  const dialectIds = new Set(
+    dialects.map((r) => r.dialect).filter((id): id is string => Boolean(id)),
+  );
+  const content = haiku.filter(
+    (r) => r.scope === "content" && !(r.dialect && dialectIds.has(r.dialect)),
+  );
+  const coveredExt = new Set(
+    content.map((r) => `${r.extension}:${r.mimeType}`),
+  );
+  const extensionOnly = haiku.filter(
+    (r) =>
+      r.scope === "extension" &&
+      !coveredExt.has(`${r.extension}:${r.mimeType}`),
+  );
+  return [...dialects, ...content, ...extensionOnly].sort(
+    (a, b) => b.savedAt - a.savedAt,
+  );
 }
 
 export async function clearSandboxViewers(): Promise<void> {

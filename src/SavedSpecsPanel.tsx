@@ -7,25 +7,12 @@ import {
 } from "./github-contrib";
 import {
   clearSandboxViewers,
+  dedupeSandboxRecords,
   deleteSandboxRecord,
   listSandboxViewers,
   type SandboxRecord,
 } from "./sandbox-store";
 import { useToast } from "./toast";
-
-function dedupeHaikuRecords(records: SandboxRecord[]): SandboxRecord[] {
-  const haiku = records.filter((r) => r.inventedBy === "haiku");
-  const content = haiku.filter((r) => r.scope === "content");
-  const contentExts = new Set(
-    content.map((r) => `${r.extension}:${r.mimeType}`),
-  );
-  const extensionOnly = haiku.filter(
-    (r) =>
-      r.scope === "extension" &&
-      !contentExts.has(`${r.extension}:${r.mimeType}`),
-  );
-  return [...content, ...extensionOnly].sort((a, b) => b.savedAt - a.savedAt);
-}
 
 function formatWhen(ts: number) {
   try {
@@ -52,7 +39,7 @@ export function SavedSpecsPanel({
 
   const reload = useCallback(async () => {
     const all = await listSandboxViewers();
-    setRecords(dedupeHaikuRecords(all));
+    setRecords(dedupeSandboxRecords(all));
   }, []);
 
   useEffect(() => {
@@ -193,14 +180,18 @@ export function SavedSpecsPanel({
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div className="min-w-0">
                         <div className="truncate text-sm font-medium">
-                          .{record.extension || "bin"}{" "}
+                          {record.dialect ?? `.${record.extension || "bin"}`}{" "}
                           <span className="font-normal text-muted-foreground">
                             · {record.filenameHint}
                           </span>
                         </div>
                         <div className="text-[11px] text-muted-foreground">
-                          {record.scope} · {record.mimeType} · {elementCount}{" "}
-                          elements · {formatWhen(record.savedAt)}
+                          {record.scope}
+                          {record.dialect
+                            ? ` · .${record.extension || "bin"}`
+                            : ""}{" "}
+                          · {record.mimeType} · {elementCount} elements ·{" "}
+                          {formatWhen(record.savedAt)}
                         </div>
                       </div>
                       <div className="flex flex-wrap gap-1.5">

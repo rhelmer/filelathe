@@ -607,6 +607,30 @@ export function detectContentKind(
   };
 }
 
+/**
+ * Dialect narrower than the file extension.
+ * These must not be stored as the extension template — a sitemap Spec
+ * would otherwise become the viewer for every `.xml` file.
+ * Null means the extension+MIME template is the right reusable key.
+ */
+export function contentDialectId(
+  filename: string,
+  sampleText: string | null,
+): string | null {
+  switch (detectContentKind(filename, sampleText).kind) {
+    case "XML sitemap":
+      return "xml-sitemap";
+    case "RSS/Atom feed":
+      return "rss-atom";
+    case "SVG":
+      return "svg";
+    case "robots.txt":
+      return "robots-txt";
+    default:
+      return null;
+  }
+}
+
 /** Compact SpecStream few-shots — structure only; bodies are placeholders. */
 const FEW_SHOTS = `
 EXAMPLE (structured document like sitemap/XML/JSON — Overview + Source; NO Hex):
