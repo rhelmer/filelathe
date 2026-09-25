@@ -58,6 +58,16 @@ var dashboardExtras = {
     }),
     description: "Embedded PDF viewer with open-in-new-tab link"
   },
+  SlideViewer: {
+    props: z.object({
+      src: z.string(),
+      title: z.string().nullable(),
+      filename: z.string(),
+      format: z.string(),
+      note: z.string().nullable()
+    }),
+    description: "Client-side PPTX slide renderer (pptx-wasm): canvas slides with charts, images, and shapes. Classic .ppt stays on ArchiveBrowser. Never invent this."
+  },
   VideoPlayer: {
     props: z.object({
       src: z.string(),
@@ -121,7 +131,7 @@ var dashboardExtras = {
       hexPreview: z.string(),
       note: z.string().nullable()
     }),
-    description: "Browser for compressed containers (ZIP/ODT/DOCX/XLSX/PPTX/EPUB/gzip/tar): entry listing, extracted document text, click-to-open an entry as its own window. Container bytes stay client-side; never invent this."
+    description: "Browser for containers (ZIP/ODT/DOCX/XLSX/PPTX/EPUB/gzip/tar and classic OLE .doc/.xls/.ppt/.msg): entry listing, extracted document text, click-to-open an entry as its own window. Container bytes stay client-side; never invent this."
   },
   InventedViewer: {
     props: z.object({
@@ -170,6 +180,7 @@ var catalog = defineCatalog(schema, {
 });
 
 // src/archive.ts
+import * as CFB from "cfb";
 import { unzipSync } from "fflate";
 var MAX_PEEK_BYTES = 4 * 1024 * 1024;
 var ZIP_PACKAGES = {
@@ -195,6 +206,26 @@ var ZIP_PACKAGE_MIME = {
   "application/vnd.openxmlformats-officedocument.presentationml.presentation": ZIP_PACKAGES.pptx,
   "application/epub+zip": ZIP_PACKAGES.epub,
   "application/java-archive": ZIP_PACKAGES.jar
+};
+var OLE_PACKAGES = {
+  doc: { id: "doc", label: "Word 97\u20132003" },
+  dot: { id: "doc", label: "Word 97\u20132003 Template" },
+  xls: { id: "xls", label: "Excel 97\u20132003" },
+  xlt: { id: "xls", label: "Excel 97\u20132003 Template" },
+  xlm: { id: "xls", label: "Excel 97\u20132003" },
+  ppt: { id: "ppt", label: "PowerPoint 97\u20132003" },
+  pot: { id: "ppt", label: "PowerPoint 97\u20132003 Template" },
+  pps: { id: "ppt", label: "PowerPoint 97\u20132003 Show" },
+  msg: { id: "msg", label: "Outlook Message" },
+  msi: { id: "ole", label: "Windows Installer" }
+};
+var OLE_PACKAGE_MIME = {
+  "application/msword": OLE_PACKAGES.doc,
+  "application/vnd.ms-word": OLE_PACKAGES.doc,
+  "application/vnd.ms-excel": OLE_PACKAGES.xls,
+  "application/vnd.ms-powerpoint": OLE_PACKAGES.ppt,
+  "application/vnd.ms-outlook": OLE_PACKAGES.msg,
+  "application/x-msi": OLE_PACKAGES.msi
 };
 
 // src/invent-catalog.ts
@@ -740,7 +771,7 @@ function buildInventPrompt(input) {
     customRules: [
       `Only use these components: ${inventCatalog.componentNames.join(", ")}.`,
       "Never invent an emulator, CPU, disk controller, ROM runner, or game console.",
-      "Never use InventedViewer, BinaryInspector, AudioPlayer, VideoPlayer, PdfViewer, PixelEditor, TrackerPlayer, Spreadsheet, or WebPageViewer.",
+      "Never use InventedViewer, BinaryInspector, AudioPlayer, VideoPlayer, PdfViewer, SlideViewer, PixelEditor, TrackerPlayer, Spreadsheet, or WebPageViewer.",
       "Put derived explanation in state.summary (Markdown) and file body in state.body; bind MarkdownView\u2192/summary and Textarea\u2192/body. Every $bindState/$state path MUST exist in top-level state with real values from ANALYSIS / sample.",
       'Example state: {"activeTab":"overview","summary":"## \u2026","body":"\u2026"}.',
       "Preferred panes: Overview (what it is + checks) | Structure or Highlights (Metrics/Badges/Alerts) | Source (editable Textarea). Hex ONLY when ANALYSIS says binary / no text.",
@@ -808,6 +839,11 @@ ${options.previousOutput.slice(0, 3500)}
 Emit a corrected SpecStream JSONL only. Prefer Overview + Structure + Source with state.summary + state.body from ANALYSIS/sample. No poster dumps; no Text|Hex-only for structured text.
 `;
 }
+
+// src/office.ts
+import * as CFB2 from "cfb";
+import { unzipSync as unzipSync2 } from "fflate";
+import * as XLSX from "xlsx";
 
 // src/evaluator.ts
 import {
@@ -1313,6 +1349,7 @@ var FORBIDDEN_TYPES = /* @__PURE__ */ new Set([
   "AudioPlayer",
   "VideoPlayer",
   "PdfViewer",
+  "SlideViewer",
   "PixelEditor",
   "TrackerPlayer",
   "Spreadsheet",
@@ -1628,12 +1665,12 @@ async function enforceRateLimit(bucket, clientKey, config = RATE_LIMITS[bucket])
   return enforceMemoryLimit(memoryKv, bucket, clientKey, config);
 }
 function clientKeyFromHeaders(headers) {
+  const vercel = headers.get("x-vercel-forwarded-for")?.split(",")[0]?.trim();
+  if (vercel) return vercel;
   const forwarded = headers.get("x-forwarded-for")?.split(",")[0]?.trim();
   if (forwarded) return forwarded;
   const realIp = headers.get("x-real-ip")?.trim();
   if (realIp) return realIp;
-  const vercel = headers.get("x-vercel-forwarded-for")?.split(",")[0]?.trim();
-  if (vercel) return vercel;
   return "local";
 }
 

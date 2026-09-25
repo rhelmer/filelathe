@@ -1,5 +1,8 @@
 import { composeForFile } from "../compose-lib";
-import { fetchRemoteResource } from "../fetch-resource";
+import {
+  FetchResourceError,
+  fetchRemoteResource,
+} from "../fetch-resource";
 import type { LoadedFile } from "../files";
 import { inventViewerSpec } from "../invent-viewer";
 import {
@@ -26,6 +29,12 @@ export async function handleFetchResource(request: Request): Promise<Response> {
       });
       return jsonResponse(resource);
     } catch (error) {
+      if (error instanceof FetchResourceError) {
+        console.error(error);
+        return errorResponse(error.status, error.message, {
+          code: error.status >= 500 ? "internal" : "bad_request",
+        });
+      }
       return catchApiError(error);
     }
   });

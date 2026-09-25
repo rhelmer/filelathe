@@ -58,6 +58,16 @@ var dashboardExtras = {
     }),
     description: "Embedded PDF viewer with open-in-new-tab link"
   },
+  SlideViewer: {
+    props: z.object({
+      src: z.string(),
+      title: z.string().nullable(),
+      filename: z.string(),
+      format: z.string(),
+      note: z.string().nullable()
+    }),
+    description: "Client-side PPTX slide renderer (pptx-wasm): canvas slides with charts, images, and shapes. Classic .ppt stays on ArchiveBrowser. Never invent this."
+  },
   VideoPlayer: {
     props: z.object({
       src: z.string(),
@@ -121,7 +131,7 @@ var dashboardExtras = {
       hexPreview: z.string(),
       note: z.string().nullable()
     }),
-    description: "Browser for compressed containers (ZIP/ODT/DOCX/XLSX/PPTX/EPUB/gzip/tar): entry listing, extracted document text, click-to-open an entry as its own window. Container bytes stay client-side; never invent this."
+    description: "Browser for containers (ZIP/ODT/DOCX/XLSX/PPTX/EPUB/gzip/tar and classic OLE .doc/.xls/.ppt/.msg): entry listing, extracted document text, click-to-open an entry as its own window. Container bytes stay client-side; never invent this."
   },
   InventedViewer: {
     props: z.object({
@@ -170,6 +180,7 @@ var catalog = defineCatalog(schema, {
 });
 
 // src/archive.ts
+import * as CFB from "cfb";
 import { unzipSync } from "fflate";
 var MAX_PEEK_BYTES = 4 * 1024 * 1024;
 var ZIP_PACKAGES = {
@@ -195,6 +206,26 @@ var ZIP_PACKAGE_MIME = {
   "application/vnd.openxmlformats-officedocument.presentationml.presentation": ZIP_PACKAGES.pptx,
   "application/epub+zip": ZIP_PACKAGES.epub,
   "application/java-archive": ZIP_PACKAGES.jar
+};
+var OLE_PACKAGES = {
+  doc: { id: "doc", label: "Word 97\u20132003" },
+  dot: { id: "doc", label: "Word 97\u20132003 Template" },
+  xls: { id: "xls", label: "Excel 97\u20132003" },
+  xlt: { id: "xls", label: "Excel 97\u20132003 Template" },
+  xlm: { id: "xls", label: "Excel 97\u20132003" },
+  ppt: { id: "ppt", label: "PowerPoint 97\u20132003" },
+  pot: { id: "ppt", label: "PowerPoint 97\u20132003 Template" },
+  pps: { id: "ppt", label: "PowerPoint 97\u20132003 Show" },
+  msg: { id: "msg", label: "Outlook Message" },
+  msi: { id: "ole", label: "Windows Installer" }
+};
+var OLE_PACKAGE_MIME = {
+  "application/msword": OLE_PACKAGES.doc,
+  "application/vnd.ms-word": OLE_PACKAGES.doc,
+  "application/vnd.ms-excel": OLE_PACKAGES.xls,
+  "application/vnd.ms-powerpoint": OLE_PACKAGES.ppt,
+  "application/vnd.ms-outlook": OLE_PACKAGES.msg,
+  "application/x-msi": OLE_PACKAGES.msi
 };
 
 // src/invent-catalog.ts
@@ -740,7 +771,7 @@ function buildInventPrompt(input) {
     customRules: [
       `Only use these components: ${inventCatalog.componentNames.join(", ")}.`,
       "Never invent an emulator, CPU, disk controller, ROM runner, or game console.",
-      "Never use InventedViewer, BinaryInspector, AudioPlayer, VideoPlayer, PdfViewer, PixelEditor, TrackerPlayer, Spreadsheet, or WebPageViewer.",
+      "Never use InventedViewer, BinaryInspector, AudioPlayer, VideoPlayer, PdfViewer, SlideViewer, PixelEditor, TrackerPlayer, Spreadsheet, or WebPageViewer.",
       "Put derived explanation in state.summary (Markdown) and file body in state.body; bind MarkdownView\u2192/summary and Textarea\u2192/body. Every $bindState/$state path MUST exist in top-level state with real values from ANALYSIS / sample.",
       'Example state: {"activeTab":"overview","summary":"## \u2026","body":"\u2026"}.',
       "Preferred panes: Overview (what it is + checks) | Structure or Highlights (Metrics/Badges/Alerts) | Source (editable Textarea). Hex ONLY when ANALYSIS says binary / no text.",
@@ -809,6 +840,11 @@ Emit a corrected SpecStream JSONL only. Prefer Overview + Structure + Source wit
 `;
 }
 
+// src/office.ts
+import * as CFB2 from "cfb";
+import { unzipSync as unzipSync2 } from "fflate";
+import * as XLSX from "xlsx";
+
 // src/files.ts
 function flattenJsonFields(data) {
   const fields = [];
@@ -836,17 +872,19 @@ function promptForFile(file) {
     case "json":
       return "Create an editor form for the loaded record fields with Save changes";
     case "csv":
-      return "Show a spreadsheet editor for the loaded CSV";
+      return "Show a spreadsheet editor for the loaded sheet";
     case "text":
       return "Show the loaded document text";
     case "markdown":
-      return "Show the rendered Markdown document only";
+      return "Show the rendered document only";
     case "webpage":
       return "Show the webpage snapshot viewer for the fetched HTML";
     case "video":
       return "Show a video player for the loaded clip";
     case "pdf":
       return "Show a PDF viewer for the loaded document";
+    case "slides":
+      return "Show the slide viewer for the loaded presentation";
     case "tracker":
       return "Show a tracker player for the loaded module";
     case "archive":
@@ -875,6 +913,8 @@ function labelForKind(kind) {
       return "Video player";
     case "pdf":
       return "PDF viewer";
+    case "slides":
+      return "Slides";
     case "tracker":
       return "Tracker player";
     case "archive":
@@ -898,7 +938,7 @@ function buildFileCandidates(file) {
       element: { type, props, ...on ? { on } : {} }
     });
   }
-  const fillWindow = file.kind === "webpage" || file.kind === "image" || file.kind === "video" || file.kind === "pdf" || file.kind === "tracker" || file.kind === "archive" || file.kind === "csv";
+  const fillWindow = file.kind === "webpage" || file.kind === "image" || file.kind === "video" || file.kind === "pdf" || file.kind === "slides" || file.kind === "tracker" || file.kind === "archive" || file.kind === "csv";
   add(
     "card",
     fillWindow ? "Card: full-width border-only shell so the primary viewer fills the floating window (no title \u2014 chrome already shows name/type)." : "Card: bordered container for the file content only (no title \u2014 the window chrome already shows name/type).",
@@ -970,6 +1010,21 @@ function buildFileCandidates(file) {
         title: null
       },
       "data:pdf"
+    );
+  }
+  if (file.kind === "slides") {
+    add(
+      "slide_viewer",
+      `SlideViewer: canvas PPTX renderer for ${JSON.stringify(file.filename)} (${file.format}). Always include for presentation files; never invent this.`,
+      "SlideViewer",
+      {
+        src: { $state: "/file/src" },
+        title: null,
+        filename: file.filename,
+        format: file.format,
+        note: null
+      },
+      "data:slides"
     );
   }
   if (file.kind === "tracker") {
@@ -1047,7 +1102,7 @@ function buildFileCandidates(file) {
   if (file.kind === "csv") {
     add(
       "spreadsheet",
-      `Spreadsheet: editable grid with columns ${JSON.stringify(file.columns)}. Always include for CSV files.`,
+      `Spreadsheet: editable grid with columns ${JSON.stringify(file.columns)}. Always include for spreadsheet/CSV files.`,
       "Spreadsheet",
       {
         columns: file.columns,
@@ -1056,6 +1111,18 @@ function buildFileCandidates(file) {
       },
       "data:spreadsheet"
     );
+    (file.charts ?? []).slice(0, 4).forEach((chart, i) => {
+      add(
+        `chart_${i}`,
+        `BarGraph: chart series ${JSON.stringify(chart.title ?? `Chart ${i + 1}`)} extracted from the workbook.`,
+        "BarGraph",
+        {
+          title: chart.title,
+          data: chart.data
+        },
+        "data:chart"
+      );
+    });
   }
   if (file.kind === "archive") {
     add(
@@ -1210,6 +1277,11 @@ function stateForFile(file) {
   if (file.kind === "csv") {
     base.file.columns = file.columns;
     base.file.rows = file.rows;
+    if (file.charts?.length) base.file.charts = file.charts;
+  }
+  if (file.kind === "slides") {
+    base.file.src = file.src;
+    base.file.format = file.format;
   }
   if (file.kind === "archive") {
     base.file.archiveId = file.archiveId;
@@ -1824,6 +1896,7 @@ var FORBIDDEN_TYPES = /* @__PURE__ */ new Set([
   "AudioPlayer",
   "VideoPlayer",
   "PdfViewer",
+  "SlideViewer",
   "PixelEditor",
   "TrackerPlayer",
   "Spreadsheet",
@@ -2296,6 +2369,24 @@ function buildFallbackComposeSpec(file, reason) {
         state,
         { note: alertNote("note", note) }
       );
+    case "slides":
+      return cardWith(
+        "slides",
+        {
+          type: "SlideViewer",
+          props: {
+            src: { $state: "/file/src" },
+            title: null,
+            filename: file.filename,
+            format: file.format,
+            note
+          },
+          children: []
+        },
+        state,
+        void 0,
+        { maxWidth: "full", centered: null }
+      );
     case "image":
       return cardWith(
         "editor",
@@ -2327,7 +2418,19 @@ function buildFallbackComposeSpec(file, reason) {
         state,
         { note: alertNote("note", note) }
       );
-    case "csv":
+    case "csv": {
+      const charts = file.charts ?? [];
+      const chartExtras = {};
+      charts.slice(0, 4).forEach((chart, i) => {
+        chartExtras[`chart${i}`] = {
+          type: "BarGraph",
+          props: {
+            title: chart.title,
+            data: chart.data
+          },
+          children: []
+        };
+      });
       return cardWith(
         "sheet",
         {
@@ -2340,8 +2443,13 @@ function buildFallbackComposeSpec(file, reason) {
           children: []
         },
         state,
-        { note: alertNote("note", note) }
+        {
+          note: alertNote("note", note),
+          ...chartExtras
+        },
+        { maxWidth: "full", centered: null }
       );
+    }
     case "markdown":
       return cardWith(
         "md",
@@ -2837,12 +2945,12 @@ async function enforceRateLimit(bucket, clientKey, config = RATE_LIMITS[bucket])
   return enforceMemoryLimit(memoryKv, bucket, clientKey, config);
 }
 function clientKeyFromHeaders(headers) {
+  const vercel = headers.get("x-vercel-forwarded-for")?.split(",")[0]?.trim();
+  if (vercel) return vercel;
   const forwarded = headers.get("x-forwarded-for")?.split(",")[0]?.trim();
   if (forwarded) return forwarded;
   const realIp = headers.get("x-real-ip")?.trim();
   if (realIp) return realIp;
-  const vercel = headers.get("x-vercel-forwarded-for")?.split(",")[0]?.trim();
-  if (vercel) return vercel;
   return "local";
 }
 

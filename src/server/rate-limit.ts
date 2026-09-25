@@ -148,15 +148,19 @@ export async function enforceRateLimit(
   return enforceMemoryLimit(memoryKv, bucket, clientKey, config);
 }
 
-/** Client identity for rate keys — prefer proxy / Vercel headers. */
+/**
+ * Client identity for rate keys.
+ * Prefer Vercel’s platform-set header first — `x-forwarded-for` can be
+ * client-influenced on some setups and must not outrank it.
+ */
 export function clientKeyFromHeaders(
   headers: Headers | { get(name: string): string | null | undefined },
 ): string {
+  const vercel = headers.get("x-vercel-forwarded-for")?.split(",")[0]?.trim();
+  if (vercel) return vercel;
   const forwarded = headers.get("x-forwarded-for")?.split(",")[0]?.trim();
   if (forwarded) return forwarded;
   const realIp = headers.get("x-real-ip")?.trim();
   if (realIp) return realIp;
-  const vercel = headers.get("x-vercel-forwarded-for")?.split(",")[0]?.trim();
-  if (vercel) return vercel;
   return "local";
 }
