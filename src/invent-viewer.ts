@@ -331,6 +331,47 @@ export function validateInventedSpec(
   return { ok: true, spec };
 }
 
+/**
+ * Drop host-only components (WebPageViewer, media players, …) so a cached or
+ * tampered Spec cannot mount them through InventedViewer's full registry.
+ */
+export function restrictInventSpec(spec: Spec): Spec {
+  const allowed = new Set(inventCatalog.componentNames);
+  const elements: Spec["elements"] = {};
+  for (const [id, el] of Object.entries(spec.elements ?? {})) {
+    if (allowed.has(el.type) && !FORBIDDEN_TYPES.has(el.type)) {
+      elements[id] = {
+        ...el,
+        children: (el.children ?? []).filter(
+          (childId) => typeof childId === "string",
+        ),
+      };
+      continue;
+    }
+    elements[id] = {
+      type: "Text",
+      props: {
+        text: `(unsupported component removed: ${el.type})`,
+        variant: "muted",
+      },
+      children: [],
+    };
+  }
+  const root =
+    typeof spec.root === "string" && elements[spec.root]
+      ? spec.root
+      : (Object.keys(elements)[0] ?? "empty");
+  if (!elements[root]) {
+    elements.empty = {
+      type: "Text",
+      props: { text: "Empty mini-app", variant: "muted" },
+      children: [],
+    };
+    return { ...spec, root: "empty", elements };
+  }
+  return { ...spec, root, elements };
+}
+
 type AcceptResult =
   | { ok: true; spec: Spec }
   | { ok: false; error: string };

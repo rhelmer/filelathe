@@ -18,6 +18,11 @@ import type { PlayerEntry } from "./players";
 import { routeUnknownFile } from "./route-unknown";
 import { buildFallbackComposeSpec } from "./compose-fallback";
 import { isModelUnavailableError } from "./server/model-errors";
+import {
+  buildFallbackSpec,
+  hydrateInventedSpec,
+  validateInventedSpec,
+} from "./invent-viewer";
 
 const catalog = appCatalog as unknown as Experimental_CompositionCatalog;
 
@@ -271,6 +276,29 @@ export async function composeForFile(
   }
 
   if (enriched.kind === "unknown" && enriched.inventedSpec) {
+    const validated = validateInventedSpec(enriched.inventedSpec);
+    if (!validated.ok) {
+      const inventInput = {
+        title: enriched.title,
+        filename: enriched.filename,
+        mimeType: enriched.mimeType,
+        size: enriched.size,
+        sampleText: enriched.sampleText,
+        hexPreview: enriched.hexPreview,
+        sourceUrl: enriched.sourceUrl,
+      };
+      enriched = {
+        ...enriched,
+        inventedSpec: hydrateInventedSpec(
+          buildFallbackSpec(inventInput),
+          inventInput,
+        ),
+        inventSource: "fallback",
+        inventReason: `Cached Spec rejected: ${validated.error}`,
+      };
+    } else {
+      enriched = { ...enriched, inventedSpec: validated.spec };
+    }
     return {
       events: [],
       finalSpec: wrapInventedViewer(enriched),
@@ -279,6 +307,10 @@ export async function composeForFile(
       kind: "unknown",
       file: enriched,
       route: "invent-cache",
+      warnings:
+        enriched.inventSource === "fallback"
+          ? [enriched.inventReason ?? "Cached Spec was invalid."]
+          : undefined,
     };
   }
 

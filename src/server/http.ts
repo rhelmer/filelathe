@@ -49,6 +49,15 @@ export async function withRateLimit(
   bucket: RateLimitBucket,
   handler: () => Promise<Response>,
 ): Promise<Response> {
+  // Browsers send Sec-Fetch-Site on navigations and fetch. Reject cross-site
+  // form POSTs that would otherwise burn invent/compose quotas for the victim IP.
+  const site = request.headers.get("sec-fetch-site")?.toLowerCase();
+  if (site === "cross-site") {
+    return errorResponse(403, "Cross-site requests are not allowed.", {
+      code: "blocked",
+    });
+  }
+
   const clientKey = clientKeyFromHeaders(request.headers);
   const limit = await enforceRateLimit(bucket, clientKey);
   if (limit.pending) {

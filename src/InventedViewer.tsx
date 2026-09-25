@@ -5,6 +5,7 @@ import { extensionFromFilename, track } from "./analytics";
 import { readApiError, toastMessageForApiError } from "./api-error";
 import { InventingAnimation } from "./InventingAnimation";
 import { hydrateInventedSpec } from "./invent-hydrate";
+import { restrictInventSpec } from "./invent-viewer";
 import type { registry as RegistryType } from "./registry";
 import { useToast } from "./toast";
 
@@ -89,7 +90,7 @@ export function InventedViewer({
   const spec = useMemo(() => {
     const parsed = parseSpecJson(specJson);
     if (!parsed) return null;
-    return hydrateInventedSpec(parsed, {
+    return hydrateInventedSpec(restrictInventSpec(parsed), {
       title: props.invent.title,
       filename: props.invent.filename,
       mimeType: props.invent.mimeType,
