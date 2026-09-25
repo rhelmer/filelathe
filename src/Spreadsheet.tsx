@@ -38,8 +38,10 @@ export function Spreadsheet({
 
   const csv = useMemo(() => {
     const escape = (value: string) => {
-      if (/[",\n]/.test(value)) return `"${value.replaceAll('"', '""')}"`;
-      return value;
+      // Excel/Sheets treat leading = + - @ as formulas when the CSV is opened.
+      const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+      if (/[",\n]/.test(safe)) return `"${safe.replaceAll('"', '""')}"`;
+      return safe;
     };
     return [headers, ...grid]
       .map((row) => row.map(escape).join(","))

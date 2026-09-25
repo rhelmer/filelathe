@@ -155,11 +155,21 @@ export async function enforceRateLimit(
 export function clientKeyFromHeaders(
   headers: Headers | { get(name: string): string | null | undefined },
 ): string {
+  // Local dev has no trusted proxy. Client-supplied forwarding headers must
+  // not mint a fresh rate-limit bucket.
+  if (!process.env.VERCEL) return "local";
+
   const vercel = headers.get("x-vercel-forwarded-for")?.split(",")[0]?.trim();
   if (vercel) return vercel;
-  const forwarded = headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  if (forwarded) return forwarded;
+  // Vercel appends the real client IP. The first hop is attacker-controlled.
+  const forwarded = headers
+    .get("x-forwarded-for")
+    ?.split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const last = forwarded?.[forwarded.length - 1];
+  if (last) return last;
   const realIp = headers.get("x-real-ip")?.trim();
   if (realIp) return realIp;
-  return "local";
+  return "unknown";
 }

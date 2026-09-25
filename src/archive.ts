@@ -11,7 +11,7 @@
  * this module still imports safely on the server (types/labels only).
  */
 import * as CFB from "cfb";
-import { unzipSync, type UnzipFileInfo } from "fflate";
+import { Inflate, Unzip, UnzipPassThrough, type UnzipFileInfo } from "fflate";
 
 export type ArchiveEntry = {
   name: string;
@@ -38,6 +38,8 @@ export type ArchiveFormat = {
 
 const MAX_ENTRIES = 200;
 const MAX_PEEK_BYTES = 4 * 1024 * 1024;
+/** Hard cap on bytes produced by inflate/gunzip (zip-bomb guard). */
+export const MAX_INFLATE_BYTES = 32 * 1024 * 1024;
 const MAX_PEEK_TEXT = 20_000;
 const MAX_SAMPLE_FILES = 8;
 
@@ -275,12 +277,137 @@ function decodeUtf8(bytes: Uint8Array | undefined): string | null {
   }
 }
 
-async function gunzip(bytes: Uint8Array): Promise<Uint8Array> {
+async function gunzip(
+  bytes: Uint8Array,
+  maxBytes = MAX_INFLATE_BYTES,
+): Promise<Uint8Array> {
   const stream = new Blob([bytes as BlobPart])
     .stream()
     .pipeThrough(new DecompressionStream("gzip"));
-  const buf = await new Response(stream).arrayBuffer();
-  return new Uint8Array(buf);
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value?.byteLength) continue;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel();
+        throw new Error(
+          `Uncompressed data exceeds ${maxBytes} bytes.`,
+        );
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out;
+}
+
+/**
+ * Unzip with a running output cap. Declared originalSize is not trusted —
+ * inflate stops once the decompressed total crosses `maxBytes`.
+ */
+/** Sync inflate that rethrows so a size cap can stop the rest of the stream. */
+class CappedInflate {
+  static compression = 8;
+  ondata: (
+    err: Error | null,
+    data: Uint8Array | null,
+    final: boolean,
+  ) => void = () => {};
+  private inflator: Inflate;
+  private dead = false;
+
+  constructor(_filename?: string, _size?: number, _originalSize?: number) {
+    this.inflator = new Inflate((data, final) => {
+      this.ondata(null, data, final);
+    });
+  }
+
+  push(chunk: Uint8Array, final: boolean) {
+    if (this.dead) return;
+    try {
+      this.inflator.push(chunk, final);
+    } catch (error) {
+      this.dead = true;
+      throw error;
+    }
+  }
+}
+
+export function unzipBounded(
+  data: Uint8Array,
+  filter?: (info: UnzipFileInfo) => boolean,
+  maxBytes = MAX_INFLATE_BYTES,
+): Record<string, Uint8Array> {
+  const out: Record<string, Uint8Array> = {};
+  let total = 0;
+  let aborted: Error | null = null;
+  const unzipper = new Unzip();
+  unzipper.register(UnzipPassThrough);
+  unzipper.register(CappedInflate);
+  unzipper.onfile = (file) => {
+    if (aborted) return;
+    const info: UnzipFileInfo = {
+      name: file.name,
+      size: file.size ?? 0,
+      originalSize: file.originalSize ?? 0,
+      compression: file.compression,
+    };
+    if (filter && !filter(info)) return;
+    const chunks: Uint8Array[] = [];
+    let local = 0;
+    file.ondata = (err, chunk, final) => {
+      if (aborted) return;
+      if (err) {
+        aborted = err instanceof Error ? err : new Error(String(err));
+        throw aborted;
+      }
+      if (chunk?.length) {
+        local += chunk.length;
+        total += chunk.length;
+        if (total > maxBytes) {
+          aborted = new Error(`Uncompressed data exceeds ${maxBytes} bytes.`);
+          throw aborted;
+        }
+        chunks.push(chunk);
+      }
+      if (final) {
+        const merged = new Uint8Array(local);
+        let offset = 0;
+        for (const part of chunks) {
+          merged.set(part, offset);
+          offset += part.length;
+        }
+        out[file.name] = merged;
+      }
+    };
+    try {
+      file.start();
+    } catch (error) {
+      aborted =
+        aborted ??
+        (error instanceof Error ? error : new Error(String(error)));
+    }
+  };
+  try {
+    unzipper.push(data, true);
+  } catch (error) {
+    aborted =
+      aborted ?? (error instanceof Error ? error : new Error(String(error)));
+  }
+  if (aborted) throw aborted;
+  return out;
 }
 
 /** Which decompressed inner file holds the document text, per package. */
@@ -363,19 +490,17 @@ function sampleEntries(files: Record<string, Uint8Array>): string | null {
 function readZipPeek(bytes: Uint8Array, format: ArchiveFormat): ArchivePeek {
   const entries: ArchiveEntry[] = [];
   const isPackage = format.id !== "zip" && format.id !== "jar";
-  const decoded = unzipSync(bytes, {
-    filter(info: UnzipFileInfo) {
-      const isDir = info.name.endsWith("/");
-      if (!isJunk(info.name)) {
-        entries.push({ name: info.name, size: info.originalSize, isDir });
-      }
-      return (
-        !isDir &&
-        !isJunk(info.name) &&
-        info.originalSize <= MAX_PEEK_BYTES &&
-        isTextish(info.name)
-      );
-    },
+  const decoded = unzipBounded(bytes, (info: UnzipFileInfo) => {
+    const isDir = info.name.endsWith("/");
+    if (!isJunk(info.name)) {
+      entries.push({ name: info.name, size: info.originalSize, isDir });
+    }
+    return (
+      !isDir &&
+      !isJunk(info.name) &&
+      info.originalSize <= MAX_PEEK_BYTES &&
+      isTextish(info.name)
+    );
   });
 
   const peek = isPackage
@@ -711,7 +836,7 @@ export async function extractEntry(
 ): Promise<Uint8Array | null> {
   try {
     if (format.container === "zip") {
-      const out = unzipSync(bytes, { filter: (f) => f.name === entryName });
+      const out = unzipBounded(bytes, (f) => f.name === entryName);
       return out[entryName] ?? null;
     }
     if (format.container === "gzip") {

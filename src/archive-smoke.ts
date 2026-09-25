@@ -5,12 +5,14 @@
  *   pnpm archive-smoke
  */
 import * as CFB from "cfb";
+import { strToU8, zipSync } from "fflate";
 import {
   formatFromId,
   isOleMagic,
   readArchive,
   scrapeOleReadableText,
   sniffArchiveFormat,
+  unzipBounded,
 } from "./archive";
 import { composeForFile } from "./compose-lib";
 import { loadDroppedFile } from "./files";
@@ -228,6 +230,21 @@ console.log("Doom WAD directory");
     check("WadBrowser", types.includes("WadBrowser"), types.join(","));
     check("not BinaryInspector", !types.includes("BinaryInspector"));
   }
+}
+
+console.log("zip inflate cap");
+{
+  const payload = new Uint8Array(80_000);
+  const packed = zipSync({ "note.txt": strToU8("hello archive") });
+  const opened = unzipBounded(packed);
+  check("small zip extracts", opened["note.txt"]?.length === 13);
+  let capped = false;
+  try {
+    unzipBounded(zipSync({ "big.txt": payload }), undefined, 1000);
+  } catch (error) {
+    capped = error instanceof Error && /exceeds/.test(error.message);
+  }
+  check("oversized inflate rejected", capped);
 }
 
 if (failed) {

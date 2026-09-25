@@ -79,8 +79,16 @@ export function catchApiError(error: unknown): Response {
   );
 }
 
+/** Compose payloads include HTML snapshots up to ~500KB; reject the rest. */
+export const MAX_JSON_BODY_CHARS = 1_500_000;
+
 export async function readJsonBody<T>(request: Request): Promise<T> {
   const text = await request.text();
   if (!text) return {} as T;
+  if (text.length > MAX_JSON_BODY_CHARS) {
+    throw new Error(
+      `Request body is too large (${text.length} chars; max ${MAX_JSON_BODY_CHARS}).`,
+    );
+  }
   return JSON.parse(text) as T;
 }

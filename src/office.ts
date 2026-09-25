@@ -10,12 +10,12 @@
  * caller can keep the archive inspector path.
  */
 import * as CFB from "cfb";
-import { unzipSync } from "fflate";
 import * as XLSX from "xlsx";
 import {
   type ArchiveFormat,
   readArchive,
   scrapeOleReadableText,
+  unzipBounded,
 } from "./archive";
 
 const MAX_DOC_CHARS = 100_000;
@@ -278,13 +278,12 @@ export function extractZipPackageImages(
   mediaPrefix: string,
 ): Array<{ name: string; dataUrl: string }> {
   try {
-    const files = unzipSync(bytes, {
-      filter: (info) =>
-        info.name.startsWith(mediaPrefix) &&
-        !info.name.endsWith("/") &&
-        info.originalSize > 0 &&
-        info.originalSize <= MAX_IMAGE_BYTES,
-    });
+    const files = unzipBounded(bytes, (info) =>
+      info.name.startsWith(mediaPrefix) &&
+      !info.name.endsWith("/") &&
+      info.originalSize > 0 &&
+      info.originalSize <= MAX_IMAGE_BYTES,
+    );
     const out: Array<{ name: string; dataUrl: string }> = [];
     for (const name of Object.keys(files).sort()) {
       if (out.length >= MAX_DOC_IMAGES) break;
@@ -445,12 +444,11 @@ function parseFirstSeries(xml: string): {
  */
 export function extractXlsxCharts(bytes: Uint8Array): SheetChart[] {
   try {
-    const files = unzipSync(bytes, {
-      filter: (info) =>
-        /^xl\/charts\/chart\d+\.xml$/i.test(info.name) &&
-        info.originalSize > 0 &&
-        info.originalSize <= 2_000_000,
-    });
+    const files = unzipBounded(bytes, (info) =>
+      /^xl\/charts\/chart\d+\.xml$/i.test(info.name) &&
+      info.originalSize > 0 &&
+      info.originalSize <= 2_000_000,
+    );
     const charts: SheetChart[] = [];
     for (const name of Object.keys(files).sort()) {
       if (charts.length >= MAX_CHARTS) break;
@@ -516,9 +514,9 @@ export async function promoteOfficeFormat(
   if (SLIDE_FORMATS.has(format.id)) {
     // Validate ZIP + at least one slide part before handing to pptx-wasm.
     try {
-      const files = unzipSync(bytes, {
-        filter: (info) => /^ppt\/slides\/slide\d+\.xml$/i.test(info.name),
-      });
+      const files = unzipBounded(bytes, (info) =>
+        /^ppt\/slides\/slide\d+\.xml$/i.test(info.name),
+      );
       if (!Object.keys(files).length) return null;
     } catch {
       return null;

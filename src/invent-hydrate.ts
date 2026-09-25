@@ -72,6 +72,8 @@ function getByPointer(state: Record<string, unknown>, path: string): unknown {
   return cur;
 }
 
+const DANGEROUS_POINTER_KEYS = new Set(["__proto__", "prototype", "constructor"]);
+
 function setByPointer(
   state: Record<string, unknown>,
   path: string,
@@ -79,12 +81,13 @@ function setByPointer(
 ): void {
   const parts = path.replace(/^\//, "").split("/").filter(Boolean);
   if (parts.length === 0) return;
+  if (parts.some((part) => DANGEROUS_POINTER_KEYS.has(part))) return;
   let cur: Record<string, unknown> = state;
   for (let i = 0; i < parts.length - 1; i++) {
     const part = parts[i]!;
     const next = cur[part];
     if (!next || typeof next !== "object" || Array.isArray(next)) {
-      cur[part] = {};
+      cur[part] = Object.create(null) as Record<string, unknown>;
     }
     cur = cur[part] as Record<string, unknown>;
   }

@@ -37,17 +37,17 @@ export async function handleInventViewer(request: Request): Promise<Response> {
 
       const result = await inventViewerSpec(
         {
-          title: body.title ?? body.filename,
-          filename: body.filename,
-          mimeType: body.mimeType,
+          title: (body.title ?? body.filename).slice(0, 300),
+          filename: body.filename.slice(0, 300),
+          mimeType: body.mimeType.slice(0, 200),
           size: body.size ?? 0,
-          sampleText: body.sampleText ?? null,
-          hexPreview: body.hexPreview,
-          sourceUrl: body.sourceUrl ?? null,
+          sampleText: body.sampleText?.slice(0, 8_000) ?? null,
+          hexPreview: body.hexPreview.slice(0, 4_000),
+          sourceUrl: body.sourceUrl?.slice(0, 2_000) ?? null,
         },
         {
           signal: AbortSignal.timeout(90_000),
-          prompt: body.prompt,
+          prompt: body.prompt?.slice(0, 24_000),
         },
       );
       return jsonResponse(result);

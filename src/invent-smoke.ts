@@ -14,6 +14,7 @@ import {
   validateInventedSpec,
 } from "./invent-viewer";
 import { hydrateInventedSpec } from "./invent-hydrate";
+import { rewriteHtmlForSnapshot, safeHttpUrl } from "./resource-utils";
 import { scrubPromptForContrib, scrubSpecForContrib } from "./contrib-scrub";
 import { contribFilename } from "./github-contrib";
 import type { InventInput } from "./invent-prompt";
@@ -113,6 +114,40 @@ check(
   /sitemap/i.test(sitemapAnalysis.summaryMarkdown) &&
     sitemapAnalysis.summaryMarkdown.includes("filelathe.com"),
 );
+
+console.log("pointer safety");
+{
+  const seeded = hydrateInventedSpec(
+    {
+      root: "x",
+      elements: {
+        x: {
+          type: "Text",
+          props: {
+            text: { $bindState: "/__proto__/polluted" },
+            variant: "body",
+          },
+          children: [],
+        },
+      },
+    },
+    fixtures[0]!,
+  );
+  const probe = {} as { polluted?: unknown };
+  check(
+    "bind path does not pollute Object.prototype",
+    probe.polluted === undefined &&
+      !Object.prototype.hasOwnProperty("polluted"),
+  );
+  check(
+    "dangerous pointer not stored",
+    !JSON.stringify(seeded.state ?? {}).includes("__proto__"),
+  );
+  check("safe http url", safeHttpUrl("https://filelathe.com/a")?.startsWith("https://") === true);
+  check("reject javascript url", safeHttpUrl("javascript:alert(1)") === null);
+  const rewritten = rewriteHtmlForSnapshot("<html><head></head></html>", "javascript:alert(1)");
+  check("no base from javascript url", !/javascript:/i.test(rewritten));
+}
 
 console.log("fallback Specs");
 for (const input of fixtures) {
