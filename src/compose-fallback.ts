@@ -263,6 +263,39 @@ export function buildFallbackComposeSpec(
       );
     }
 
+    case "wad":
+      return {
+        root: "card",
+        elements: {
+          card: {
+            type: "Card",
+            props: {
+              title: null,
+              description: null,
+              maxWidth: "full",
+              centered: null,
+            },
+            children: ["wad"],
+          },
+          wad: {
+            type: "WadBrowser",
+            props: {
+              wadId: file.wadId,
+              filename: file.filename,
+              mimeType: file.mimeType,
+              size: file.size,
+              identification: file.identification,
+              formatLabel: file.formatLabel,
+              lumpCount: file.lumpCount,
+              mapCount: file.mapCount,
+              mapNames: file.mapNames,
+              note,
+            },
+            children: [],
+          },
+        },
+      };
+
     case "archive":
       return {
         root: "card",

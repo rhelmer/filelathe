@@ -58,6 +58,10 @@ drop / URL
     ▼
 detect FileKind (image, pdf, csv, tracker, archive, … or unknown)
     │
+    ├─ doom wad (IWAD/PWAD magic) → WadBrowser
+    │        (lump directory, maps, text/hex peek — not an emulator
+    │         and not the Jev hex inspector; bytes stay client-side)
+    │
     ├─ archive (zip/gzip/tar + classic ppt/msg + other containers) → ArchiveBrowser
     │        (list entries, peek document text, click-to-open an entry;
     │         container bytes stay client-side, never sent to Jev)
@@ -162,6 +166,7 @@ Only Specs with `inventedBy: "haiku"` are reused from cache (not fallbacks). Pla
 | `src/server/` | Shared handlers, Upstash/memory rate limits |
 | `src/files.ts` | Kind detection, samples, hex preview |
 | `src/archive.ts` | Archive sniff (zip/gzip/tar), unzip/gunzip/untar, package peek, XML→text |
+| `src/wad.ts` / `src/WadBrowser.tsx` | Doom IWAD/PWAD directory (maps + lumps; never Jev inspect) |
 | `src/archive-store.ts` | Session Map of archive bytes + click-to-open opener (client-only) |
 | `src/ArchiveBrowser.tsx` | Entry listing, extracted text, click-to-open, container hex |
 | `src/players.ts` | Host player / emulator registry (available vs planned) |

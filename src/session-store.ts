@@ -137,7 +137,7 @@ export async function serializeWindow(
         ? (moduleBytes ?? null)
         : null,
     archiveBytes:
-      item.file.kind === "archive"
+      item.file.kind === "archive" || item.file.kind === "wad"
         ? (archiveBytes ?? null)
         : null,
     spec: item.spec,
@@ -175,6 +175,10 @@ export function reviveWindow(stored: SessionWindow): LiveWindow {
 
   if (file.kind === "archive" && stored.archiveBytes) {
     putArchive(file.archiveId, stored.archiveBytes);
+  }
+
+  if (file.kind === "wad" && stored.archiveBytes) {
+    putArchive(file.wadId, stored.archiveBytes);
   }
 
   if (
@@ -272,7 +276,9 @@ export async function buildSessionSnapshot(input: {
     const archiveBytes =
       item.file.kind === "archive"
         ? input.getArchiveBytes(item.file.archiveId) ?? null
-        : null;
+        : item.file.kind === "wad"
+          ? input.getArchiveBytes(item.file.wadId) ?? null
+          : null;
     windows.push(await serializeWindow(item, moduleBytes, archiveBytes));
   }
   return {
