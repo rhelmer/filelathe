@@ -10,6 +10,24 @@ export function safeHttpUrl(value: string | null | undefined): string | null {
   }
 }
 
+/**
+ * URL safe to put in an <a href> or iframe src.
+ * http(s) and same-document hashes only. javascript:, data:, and blob: are rejected
+ * here — blob media uses its own check.
+ */
+export function safeNavigationHref(value: string | null | undefined): string {
+  const http = safeHttpUrl(value);
+  if (http) return http;
+  const trimmed = value?.trim() ?? "";
+  if (/^#[A-Za-z0-9_\-.:]*$/.test(trimmed)) return trimmed;
+  if (
+    /^mailto:[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+$/.test(trimmed)
+  ) {
+    return trimmed;
+  }
+  return "#";
+}
+
 export function toHexPreview(bytes: Uint8Array, max = 256): string {
   const slice = bytes.slice(0, max);
   const parts: string[] = [];

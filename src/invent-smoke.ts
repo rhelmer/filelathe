@@ -16,7 +16,11 @@ import {
 } from "./invent-viewer";
 import { hydrateInventedSpec } from "./invent-hydrate";
 import { markdownUrlTransform } from "./MarkdownView";
-import { rewriteHtmlForSnapshot, safeHttpUrl } from "./resource-utils";
+import {
+  rewriteHtmlForSnapshot,
+  safeHttpUrl,
+  safeNavigationHref,
+} from "./resource-utils";
 import { scrubPromptForContrib, scrubSpecForContrib } from "./contrib-scrub";
 import { contribFilename } from "./github-contrib";
 import type { InventInput } from "./invent-prompt";
@@ -147,6 +151,15 @@ console.log("pointer safety");
   );
   check("safe http url", safeHttpUrl("https://filelathe.com/a")?.startsWith("https://") === true);
   check("reject javascript url", safeHttpUrl("javascript:alert(1)") === null);
+  check(
+    "navigation href blocks javascript",
+    safeNavigationHref("javascript:alert(1)") === "#",
+  );
+  check(
+    "navigation href keeps https",
+    safeNavigationHref("https://filelathe.com/formats/") ===
+      "https://filelathe.com/formats/",
+  );
   const rewritten = rewriteHtmlForSnapshot("<html><head></head></html>", "javascript:alert(1)");
   check("no base from javascript url", !/javascript:/i.test(rewritten));
   const dataPng = "data:image/png;base64,iVBORw0KGgo=";
