@@ -13,6 +13,7 @@ import { SlideViewer } from "./SlideViewer";
 import { Spreadsheet } from "./Spreadsheet";
 import { TrackerPlayer } from "./TrackerPlayer";
 import { usePersistedMedia } from "./use-persisted-media";
+import { safeNavigationHref } from "./resource-utils";
 import { WebPageViewer } from "./WebPageViewer";
 
 function Metric({
@@ -119,9 +120,28 @@ function AudioPlayer({
   );
 }
 
+function SafeLink({
+  props,
+}: {
+  props: { label: string; href: string };
+}) {
+  const href = safeNavigationHref(props.href);
+  const external = href.startsWith("http://") || href.startsWith("https://");
+  return (
+    <a
+      href={href}
+      className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+      {...(external ? { target: "_blank", rel: "noreferrer" } : {})}
+    >
+      {props.label}
+    </a>
+  );
+}
+
 export const { registry } = defineRegistry(catalog, {
   components: {
     ...shadcnComponents,
+    Link: SafeLink,
     Metric,
     BarGraph,
     AudioPlayer,
