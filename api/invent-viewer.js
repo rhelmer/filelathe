@@ -97,7 +97,7 @@ var dashboardExtras = {
       sourceUrl: z.string().nullable(),
       title: z.string().nullable()
     }),
-    description: "Fetched HTML webpage snapshot: sandboxed Preview iframe + Source tab + open-original link"
+    description: "HTML webpage snapshot: sandboxed Preview iframe + Source tab + open-original link"
   },
   BinaryInspector: {
     props: z.object({
@@ -110,6 +110,21 @@ var dashboardExtras = {
       playerHint: z.string().nullable()
     }),
     description: "Hex/metadata inspector for opaque binaries and for formats whose emulator is planned but not wired. Never a fake emulator."
+  },
+  WadBrowser: {
+    props: z.object({
+      wadId: z.string(),
+      filename: z.string(),
+      mimeType: z.string(),
+      size: z.number(),
+      identification: z.enum(["IWAD", "PWAD"]),
+      formatLabel: z.string(),
+      lumpCount: z.number(),
+      mapCount: z.number(),
+      mapNames: z.array(z.string()),
+      note: z.string().nullable()
+    }),
+    description: "Doom IWAD/PWAD lump directory: map markers, text lumps, and a per-lump text or hex peek. Not an emulator. WAD bytes stay client-side; never invent this and never send the file to the hex inspector."
   },
   ArchiveBrowser: {
     props: z.object({
@@ -181,8 +196,9 @@ var catalog = defineCatalog(schema, {
 
 // src/archive.ts
 import * as CFB from "cfb";
-import { unzipSync } from "fflate";
+import { Inflate, Unzip, UnzipPassThrough } from "fflate";
 var MAX_PEEK_BYTES = 4 * 1024 * 1024;
+var MAX_INFLATE_BYTES = 32 * 1024 * 1024;
 var ZIP_PACKAGES = {
   odt: { id: "odt", label: "OpenDocument Text" },
   ods: { id: "ods", label: "OpenDocument Sheet" },
@@ -842,8 +858,31 @@ Emit a corrected SpecStream JSONL only. Prefer Overview + Structure + Source wit
 
 // src/office.ts
 import * as CFB2 from "cfb";
-import { unzipSync as unzipSync2 } from "fflate";
 import * as XLSX from "xlsx";
+
+// src/wad.ts
+var MAP_CORE = [
+  "THINGS",
+  "LINEDEFS",
+  "SIDEDEFS",
+  "VERTEXES",
+  "SEGS",
+  "SSECTORS",
+  "NODES",
+  "SECTORS",
+  "REJECT",
+  "BLOCKMAP"
+];
+var MAP_FOLLOW = /* @__PURE__ */ new Set([
+  ...MAP_CORE,
+  "BEHAVIOR",
+  "SCRIPTS",
+  "DIALOGUE",
+  "ZNODES",
+  "LIGHTMAP",
+  "TEXTMAP",
+  "ENDMAP"
+]);
 
 // src/evaluator.ts
 import {
@@ -927,15 +966,17 @@ function getByPointer(state, path) {
   }
   return cur;
 }
+var DANGEROUS_POINTER_KEYS = /* @__PURE__ */ new Set(["__proto__", "prototype", "constructor"]);
 function setByPointer(state, path, value) {
   const parts = path.replace(/^\//, "").split("/").filter(Boolean);
   if (parts.length === 0) return;
+  if (parts.some((part) => DANGEROUS_POINTER_KEYS.has(part))) return;
   let cur = state;
   for (let i = 0; i < parts.length - 1; i++) {
     const part = parts[i];
     const next = cur[part];
     if (!next || typeof next !== "object" || Array.isArray(next)) {
-      cur[part] = {};
+      cur[part] = /* @__PURE__ */ Object.create(null);
     }
     cur = cur[part];
   }
@@ -1660,13 +1701,15 @@ async function enforceRateLimit(bucket, clientKey, config = RATE_LIMITS[bucket])
   return enforceMemoryLimit(memoryKv, bucket, clientKey, config);
 }
 function clientKeyFromHeaders(headers) {
+  if (!process.env.VERCEL) return "local";
   const vercel = headers.get("x-vercel-forwarded-for")?.split(",")[0]?.trim();
   if (vercel) return vercel;
-  const forwarded = headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  if (forwarded) return forwarded;
+  const forwarded = headers.get("x-forwarded-for")?.split(",").map((part) => part.trim()).filter(Boolean);
+  const last = forwarded?.[forwarded.length - 1];
+  if (last) return last;
   const realIp = headers.get("x-real-ip")?.trim();
   if (realIp) return realIp;
-  return "local";
+  return "unknown";
 }
 
 // src/server/http.ts
@@ -1720,9 +1763,15 @@ function catchApiError(error) {
     { code: "internal" }
   );
 }
+var MAX_JSON_BODY_CHARS = 15e5;
 async function readJsonBody(request) {
   const text = await request.text();
   if (!text) return {};
+  if (text.length > MAX_JSON_BODY_CHARS) {
+    throw new Error(
+      `Request body is too large (${text.length} chars; max ${MAX_JSON_BODY_CHARS}).`
+    );
+  }
   return JSON.parse(text);
 }
 
@@ -1743,17 +1792,17 @@ async function handleInventViewer(request) {
       }
       const result = await inventViewerSpec(
         {
-          title: body.title ?? body.filename,
-          filename: body.filename,
-          mimeType: body.mimeType,
+          title: (body.title ?? body.filename).slice(0, 300),
+          filename: body.filename.slice(0, 300),
+          mimeType: body.mimeType.slice(0, 200),
           size: body.size ?? 0,
-          sampleText: body.sampleText ?? null,
-          hexPreview: body.hexPreview,
-          sourceUrl: body.sourceUrl ?? null
+          sampleText: body.sampleText?.slice(0, 8e3) ?? null,
+          hexPreview: body.hexPreview.slice(0, 4e3),
+          sourceUrl: body.sourceUrl?.slice(0, 2e3) ?? null
         },
         {
           signal: AbortSignal.timeout(9e4),
-          prompt: body.prompt
+          prompt: body.prompt?.slice(0, 24e3)
         }
       );
       return jsonResponse(result);

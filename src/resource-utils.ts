@@ -1,3 +1,15 @@
+/** http(s) only. Drops javascript:, data:, and other schemes. */
+export function safeHttpUrl(value: string | null | undefined): string | null {
+  if (!value?.trim()) return null;
+  try {
+    const url = new URL(value.trim());
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    return url.href;
+  } catch {
+    return null;
+  }
+}
+
 export function toHexPreview(bytes: Uint8Array, max = 256): string {
   const slice = bytes.slice(0, max);
   const parts: string[] = [];
@@ -51,10 +63,11 @@ export function rewriteHtmlForSnapshot(
     "",
   );
 
-  if (sourceUrl) {
+  const safeSource = safeHttpUrl(sourceUrl);
+  if (safeSource) {
     let baseHref: string | null = null;
     try {
-      baseHref = new URL(".", sourceUrl).href;
+      baseHref = new URL(".", safeSource).href;
     } catch {
       baseHref = null;
     }

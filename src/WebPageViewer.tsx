@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { rewriteHtmlForSnapshot } from "./resource-utils";
+import { rewriteHtmlForSnapshot, safeHttpUrl } from "./resource-utils";
 
 export function WebPageViewer({
   props,
@@ -12,9 +12,10 @@ export function WebPageViewer({
 }) {
   const [tab, setTab] = useState<"preview" | "source">("preview");
   const label = props.title?.trim() || "Page preview";
+  const sourceUrl = safeHttpUrl(props.sourceUrl);
   const previewHtml = useMemo(
-    () => rewriteHtmlForSnapshot(props.html, props.sourceUrl),
-    [props.html, props.sourceUrl],
+    () => rewriteHtmlForSnapshot(props.html, sourceUrl),
+    [props.html, sourceUrl],
   );
 
   return (
@@ -47,9 +48,9 @@ export function WebPageViewer({
             Source
           </button>
         </div>
-        {props.sourceUrl ? (
+        {sourceUrl ? (
           <a
-            href={props.sourceUrl}
+            href={sourceUrl}
             target="_blank"
             rel="noreferrer"
             className="text-xs text-primary underline-offset-2 hover:underline"
@@ -63,7 +64,7 @@ export function WebPageViewer({
         <iframe
           title={label}
           className="min-h-[320px] w-full flex-1 rounded-lg border bg-white h-[min(78dvh,1400px)]"
-          sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"
+          sandbox="allow-scripts allow-forms"
           srcDoc={previewHtml}
           referrerPolicy="no-referrer"
         />

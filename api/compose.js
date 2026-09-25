@@ -97,7 +97,7 @@ var dashboardExtras = {
       sourceUrl: z.string().nullable(),
       title: z.string().nullable()
     }),
-    description: "Fetched HTML webpage snapshot: sandboxed Preview iframe + Source tab + open-original link"
+    description: "HTML webpage snapshot: sandboxed Preview iframe + Source tab + open-original link"
   },
   BinaryInspector: {
     props: z.object({
@@ -110,6 +110,21 @@ var dashboardExtras = {
       playerHint: z.string().nullable()
     }),
     description: "Hex/metadata inspector for opaque binaries and for formats whose emulator is planned but not wired. Never a fake emulator."
+  },
+  WadBrowser: {
+    props: z.object({
+      wadId: z.string(),
+      filename: z.string(),
+      mimeType: z.string(),
+      size: z.number(),
+      identification: z.enum(["IWAD", "PWAD"]),
+      formatLabel: z.string(),
+      lumpCount: z.number(),
+      mapCount: z.number(),
+      mapNames: z.array(z.string()),
+      note: z.string().nullable()
+    }),
+    description: "Doom IWAD/PWAD lump directory: map markers, text lumps, and a per-lump text or hex peek. Not an emulator. WAD bytes stay client-side; never invent this and never send the file to the hex inspector."
   },
   ArchiveBrowser: {
     props: z.object({
@@ -181,8 +196,9 @@ var catalog = defineCatalog(schema, {
 
 // src/archive.ts
 import * as CFB from "cfb";
-import { unzipSync } from "fflate";
+import { Inflate, Unzip, UnzipPassThrough } from "fflate";
 var MAX_PEEK_BYTES = 4 * 1024 * 1024;
+var MAX_INFLATE_BYTES = 32 * 1024 * 1024;
 var ZIP_PACKAGES = {
   odt: { id: "odt", label: "OpenDocument Text" },
   ods: { id: "ods", label: "OpenDocument Sheet" },
@@ -842,8 +858,31 @@ Emit a corrected SpecStream JSONL only. Prefer Overview + Structure + Source wit
 
 // src/office.ts
 import * as CFB2 from "cfb";
-import { unzipSync as unzipSync2 } from "fflate";
 import * as XLSX from "xlsx";
+
+// src/wad.ts
+var MAP_CORE = [
+  "THINGS",
+  "LINEDEFS",
+  "SIDEDEFS",
+  "VERTEXES",
+  "SEGS",
+  "SSECTORS",
+  "NODES",
+  "SECTORS",
+  "REJECT",
+  "BLOCKMAP"
+];
+var MAP_FOLLOW = /* @__PURE__ */ new Set([
+  ...MAP_CORE,
+  "BEHAVIOR",
+  "SCRIPTS",
+  "DIALOGUE",
+  "ZNODES",
+  "LIGHTMAP",
+  "TEXTMAP",
+  "ENDMAP"
+]);
 
 // src/files.ts
 function flattenJsonFields(data) {
@@ -889,6 +928,8 @@ function promptForFile(file) {
       return "Show a tracker player for the loaded module";
     case "archive":
       return "Show the archive browser for the loaded container: list entries and extracted text";
+    case "wad":
+      return "Show the Doom WAD directory: maps and lumps, not a hex inspector or emulator";
     case "unknown":
       return "Show the invented catalog Spec viewer for this unrecognized resource";
   }
@@ -919,6 +960,8 @@ function labelForKind(kind) {
       return "Tracker player";
     case "archive":
       return "Archive";
+    case "wad":
+      return "Doom WAD";
     case "unknown":
       return "Invented Spec";
   }
@@ -938,7 +981,7 @@ function buildFileCandidates(file) {
       element: { type, props, ...on ? { on } : {} }
     });
   }
-  const fillWindow = file.kind === "webpage" || file.kind === "image" || file.kind === "video" || file.kind === "pdf" || file.kind === "slides" || file.kind === "tracker" || file.kind === "archive" || file.kind === "csv";
+  const fillWindow = file.kind === "webpage" || file.kind === "image" || file.kind === "video" || file.kind === "pdf" || file.kind === "slides" || file.kind === "tracker" || file.kind === "archive" || file.kind === "wad" || file.kind === "csv";
   add(
     "card",
     fillWindow ? "Card: full-width border-only shell so the primary viewer fills the floating window (no title \u2014 chrome already shows name/type)." : "Card: bordered container for the file content only (no title \u2014 the window chrome already shows name/type).",
@@ -1124,6 +1167,26 @@ function buildFileCandidates(file) {
       );
     });
   }
+  if (file.kind === "wad") {
+    add(
+      "wad_browser",
+      `WadBrowser: Doom ${file.identification} directory for ${JSON.stringify(file.filename)} (${file.lumpCount} lumps, ${file.mapCount} maps). Always include. Never a hex inspector or an emulator.`,
+      "WadBrowser",
+      {
+        wadId: file.wadId,
+        filename: file.filename,
+        mimeType: file.mimeType,
+        size: file.size,
+        identification: file.identification,
+        formatLabel: file.formatLabel,
+        lumpCount: file.lumpCount,
+        mapCount: file.mapCount,
+        mapNames: file.mapNames,
+        note: null
+      },
+      "data:wad"
+    );
+  }
   if (file.kind === "archive") {
     add(
       "archive_browser",
@@ -1282,6 +1345,15 @@ function stateForFile(file) {
   if (file.kind === "slides") {
     base.file.src = file.src;
     base.file.format = file.format;
+  }
+  if (file.kind === "wad") {
+    base.file.wadId = file.wadId;
+    base.file.identification = file.identification;
+    base.file.formatLabel = file.formatLabel;
+    base.file.size = file.size;
+    base.file.lumpCount = file.lumpCount;
+    base.file.mapCount = file.mapCount;
+    base.file.mapNames = file.mapNames;
   }
   if (file.kind === "archive") {
     base.file.archiveId = file.archiveId;
@@ -1474,15 +1546,17 @@ function getByPointer(state, path) {
   }
   return cur;
 }
+var DANGEROUS_POINTER_KEYS = /* @__PURE__ */ new Set(["__proto__", "prototype", "constructor"]);
 function setByPointer(state, path, value) {
   const parts = path.replace(/^\//, "").split("/").filter(Boolean);
   if (parts.length === 0) return;
+  if (parts.some((part) => DANGEROUS_POINTER_KEYS.has(part))) return;
   let cur = state;
   for (let i = 0; i < parts.length - 1; i++) {
     const part = parts[i];
     const next = cur[part];
     if (!next || typeof next !== "object" || Array.isArray(next)) {
-      cur[part] = {};
+      cur[part] = /* @__PURE__ */ Object.create(null);
     }
     cur = cur[part];
   }
@@ -2190,7 +2264,7 @@ function playerRegistrySummary() {
 }
 
 // src/route-unknown.ts
-function heuristicInventOrInspect(filename, mimeType, sampleText) {
+function heuristicInventOrInspect(filename, mimeType, _sampleText = null) {
   const matches = matchPlayers(filename, mimeType);
   const planned = plannedPlayer(matches);
   if (planned) {
@@ -2200,16 +2274,9 @@ function heuristicInventOrInspect(filename, mimeType, sampleText) {
       reason: `Matched planned emulator ${planned.id} \u2014 inspect only until a host player ships.`
     };
   }
-  if (!sampleText || sampleText.trim().length < 20) {
-    return {
-      action: "inspect",
-      player: null,
-      reason: "Little or no decodable text \u2014 binary inspector."
-    };
-  }
   return {
     action: "invent",
-    reason: "Decodable text \u2014 invent a catalog Spec mini-app."
+    reason: "No planned host player \u2014 invent a catalog Spec mini-app."
   };
 }
 async function routeUnknownFile(input, options = {}) {
@@ -2243,15 +2310,15 @@ async function routeUnknownFile(input, options = {}) {
           sourceUrl: input.sourceUrl ?? null
         },
         players: playerRegistrySummary(),
-        guidance: "Never invent an emulator, CPU, disk controller, or game console. Those must come from the host player registry. Prefer invent only for readable source/config/text that benefits from a json-render mini-app. Prefer inspect for opaque binaries, archives, and ROMs/disks with no registered player."
+        guidance: "Never invent an emulator, CPU, disk controller, or game console \u2014 those must come from the host player registry. Prefer invent (a json-render Spec mini-app) for unrecognized files, including opaque binaries, unless the file clearly needs a planned registry emulator. Prefer inspect only when a planned emulator/player is the right host and is not wired yet, or when inventing a mini-app would not help."
       },
       questions: {
         route: {
           type: "choice",
           instructions: "How should the drop\u2192UI host handle this unrecognized file?",
           criteria: {
-            invent: "Decodable text, source, config, or markup \u2014 invent a small json-render Spec viewer/editor. Not an emulator.",
-            inspect: "Opaque binary, ROM, disk, archive, or anything that would need an emulator/player we do not have \u2014 show hex/metadata inspector only."
+            invent: "Default for unrecognized files: invent a small json-render Spec mini-app (text, config, markup, or opaque binary that can still use a useful viewer/notes/hex UI). Not an emulator.",
+            inspect: "Only when a planned host emulator/player is required and not yet wired, or inventing a mini-app is clearly not useful \u2014 show hex/metadata inspector only."
           }
         }
       },
@@ -2520,6 +2587,38 @@ ${pretty}
         { note: alertNote("note", note) }
       );
     }
+    case "wad":
+      return {
+        root: "card",
+        elements: {
+          card: {
+            type: "Card",
+            props: {
+              title: null,
+              description: null,
+              maxWidth: "full",
+              centered: null
+            },
+            children: ["wad"]
+          },
+          wad: {
+            type: "WadBrowser",
+            props: {
+              wadId: file.wadId,
+              filename: file.filename,
+              mimeType: file.mimeType,
+              size: file.size,
+              identification: file.identification,
+              formatLabel: file.formatLabel,
+              lumpCount: file.lumpCount,
+              mapCount: file.mapCount,
+              mapNames: file.mapNames,
+              note
+            },
+            children: []
+          }
+        }
+      };
     case "archive":
       return {
         root: "card",
@@ -2661,8 +2760,52 @@ function wrapBinaryInspector(file, options) {
     }
   };
 }
+function wrapWadBrowser(file, note = null) {
+  return {
+    root: "card",
+    elements: {
+      card: {
+        type: "Card",
+        props: {
+          title: null,
+          description: null,
+          maxWidth: "full",
+          centered: null
+        },
+        children: ["wad"]
+      },
+      wad: {
+        type: "WadBrowser",
+        props: {
+          wadId: file.wadId,
+          filename: file.filename,
+          mimeType: file.mimeType,
+          size: file.size,
+          identification: file.identification,
+          formatLabel: file.formatLabel,
+          lumpCount: file.lumpCount,
+          mapCount: file.mapCount,
+          mapNames: file.mapNames,
+          note
+        },
+        children: []
+      }
+    }
+  };
+}
 async function composeForFile(file, options = {}) {
   let enriched = file;
+  if (file.kind === "wad") {
+    return {
+      events: [],
+      finalSpec: wrapWadBrowser(file),
+      stopReason: "finish",
+      prompt: promptForFile(file),
+      kind: "wad",
+      file,
+      route: "wad"
+    };
+  }
   if (file.kind === "unknown" && !file.inventedSpec) {
     const route = await routeUnknownFile(
       {
@@ -2940,13 +3083,15 @@ async function enforceRateLimit(bucket, clientKey, config = RATE_LIMITS[bucket])
   return enforceMemoryLimit(memoryKv, bucket, clientKey, config);
 }
 function clientKeyFromHeaders(headers) {
+  if (!process.env.VERCEL) return "local";
   const vercel = headers.get("x-vercel-forwarded-for")?.split(",")[0]?.trim();
   if (vercel) return vercel;
-  const forwarded = headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  if (forwarded) return forwarded;
+  const forwarded = headers.get("x-forwarded-for")?.split(",").map((part) => part.trim()).filter(Boolean);
+  const last = forwarded?.[forwarded.length - 1];
+  if (last) return last;
   const realIp = headers.get("x-real-ip")?.trim();
   if (realIp) return realIp;
-  return "local";
+  return "unknown";
 }
 
 // src/server/http.ts
@@ -3000,9 +3145,15 @@ function catchApiError(error) {
     { code: "internal" }
   );
 }
+var MAX_JSON_BODY_CHARS = 15e5;
 async function readJsonBody(request) {
   const text = await request.text();
   if (!text) return {};
+  if (text.length > MAX_JSON_BODY_CHARS) {
+    throw new Error(
+      `Request body is too large (${text.length} chars; max ${MAX_JSON_BODY_CHARS}).`
+    );
+  }
   return JSON.parse(text);
 }
 
