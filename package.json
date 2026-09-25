@@ -18,7 +18,6 @@
     "office-smoke": "tsx src/office-smoke.ts",
     "check-types": "tsc --noEmit",
     "verify": "pnpm check-types && pnpm invent-smoke && pnpm archive-smoke && pnpm office-smoke && pnpm route-unknown-smoke && pnpm build",
-
     "demo:capture": "node scripts/social-media/capture-filelathe-demo.mjs"
   },
   "dependencies": {
@@ -43,7 +42,7 @@
     "react-markdown": "10.1.0",
     "remark-gfm": "4.0.1",
     "tailwind-merge": "^3.4.1",
-    "xlsx": "^0.18.5",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "zod": "4.3.6"
   },
   "devDependencies": {
