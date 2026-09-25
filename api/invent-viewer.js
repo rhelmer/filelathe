@@ -1736,6 +1736,12 @@ function errorResponse(status, error, options = {}) {
   return jsonResponse(body, { status, headers });
 }
 async function withRateLimit(request, bucket, handler) {
+  const site = request.headers.get("sec-fetch-site")?.toLowerCase();
+  if (site === "cross-site") {
+    return errorResponse(403, "Cross-site requests are not allowed.", {
+      code: "blocked"
+    });
+  }
   const clientKey = clientKeyFromHeaders(request.headers);
   const limit = await enforceRateLimit(bucket, clientKey);
   if (limit.pending) {

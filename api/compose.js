@@ -2884,6 +2884,29 @@ async function composeForFile(file, options = {}) {
     };
   }
   if (enriched.kind === "unknown" && enriched.inventedSpec) {
+    const validated = validateInventedSpec(enriched.inventedSpec);
+    if (!validated.ok) {
+      const inventInput = {
+        title: enriched.title,
+        filename: enriched.filename,
+        mimeType: enriched.mimeType,
+        size: enriched.size,
+        sampleText: enriched.sampleText,
+        hexPreview: enriched.hexPreview,
+        sourceUrl: enriched.sourceUrl
+      };
+      enriched = {
+        ...enriched,
+        inventedSpec: hydrateInventedSpec(
+          buildFallbackSpec(inventInput),
+          inventInput
+        ),
+        inventSource: "fallback",
+        inventReason: `Cached Spec rejected: ${validated.error}`
+      };
+    } else {
+      enriched = { ...enriched, inventedSpec: validated.spec };
+    }
     return {
       events: [],
       finalSpec: wrapInventedViewer(enriched),
@@ -2891,7 +2914,8 @@ async function composeForFile(file, options = {}) {
       prompt: enriched.inventPrompt ?? promptForFile(enriched),
       kind: "unknown",
       file: enriched,
-      route: "invent-cache"
+      route: "invent-cache",
+      warnings: enriched.inventSource === "fallback" ? [enriched.inventReason ?? "Cached Spec was invalid."] : void 0
     };
   }
   const prompt = promptForFile(enriched);
@@ -3118,6 +3142,12 @@ function errorResponse(status, error, options = {}) {
   return jsonResponse(body, { status, headers });
 }
 async function withRateLimit(request, bucket, handler) {
+  const site = request.headers.get("sec-fetch-site")?.toLowerCase();
+  if (site === "cross-site") {
+    return errorResponse(403, "Cross-site requests are not allowed.", {
+      code: "blocked"
+    });
+  }
   const clientKey = clientKeyFromHeaders(request.headers);
   const limit = await enforceRateLimit(bucket, clientKey);
   if (limit.pending) {

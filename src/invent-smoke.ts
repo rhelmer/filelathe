@@ -11,9 +11,11 @@ import { analyzeFileSample, detectContentKind } from "./invent-prompt";
 import {
   buildFallbackSpec,
   parseInventedSpec,
+  restrictInventSpec,
   validateInventedSpec,
 } from "./invent-viewer";
 import { hydrateInventedSpec } from "./invent-hydrate";
+import { markdownUrlTransform } from "./MarkdownView";
 import { rewriteHtmlForSnapshot, safeHttpUrl } from "./resource-utils";
 import { scrubPromptForContrib, scrubSpecForContrib } from "./contrib-scrub";
 import { contribFilename } from "./github-contrib";
@@ -147,6 +149,29 @@ console.log("pointer safety");
   check("reject javascript url", safeHttpUrl("javascript:alert(1)") === null);
   const rewritten = rewriteHtmlForSnapshot("<html><head></head></html>", "javascript:alert(1)");
   check("no base from javascript url", !/javascript:/i.test(rewritten));
+  const dataPng = "data:image/png;base64,iVBORw0KGgo=";
+  check(
+    "markdown keeps data image",
+    markdownUrlTransform(dataPng) === dataPng,
+  );
+  check(
+    "markdown strips javascript",
+    markdownUrlTransform("javascript:alert(1)") === "",
+  );
+  const restricted = restrictInventSpec({
+    root: "bad",
+    elements: {
+      bad: {
+        type: "WebPageViewer",
+        props: { html: "<script>x</script>", sourceUrl: null, title: null },
+        children: [],
+      },
+    },
+  });
+  check(
+    "restrict removes WebPageViewer",
+    restricted.elements.bad?.type === "Text",
+  );
 }
 
 console.log("fallback Specs");
