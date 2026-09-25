@@ -1,5 +1,6 @@
 /**
- * Offline archive sniff / OLE peek smoke (no API keys).
+ * Offline container sniff smoke: ZIP/OLE archives + Doom WAD directories
+ * (no API keys).
  *
  *   pnpm archive-smoke
  */
@@ -11,6 +12,9 @@ import {
   scrapeOleReadableText,
   sniffArchiveFormat,
 } from "./archive";
+import { composeForFile } from "./compose-lib";
+import { loadDroppedFile } from "./files";
+import { parseWad } from "./wad";
 
 let failed = 0;
 function check(name: string, ok: boolean, detail = "") {
@@ -126,6 +130,104 @@ console.log("OOXML still ZIP (not OLE)");
     sniffed ? `${sniffed.container}/${sniffed.id}` : "null",
   );
   check("docx is not OLE magic", !isOleMagic(zip));
+}
+
+function i32(value: number): Uint8Array {
+  const bytes = new Uint8Array(4);
+  bytes[0] = value & 0xff;
+  bytes[1] = (value >> 8) & 0xff;
+  bytes[2] = (value >> 16) & 0xff;
+  bytes[3] = (value >> 24) & 0xff;
+  return bytes;
+}
+
+function name8(name: string): Uint8Array {
+  const bytes = new Uint8Array(8);
+  for (let i = 0; i < Math.min(8, name.length); i++) {
+    bytes[i] = name.charCodeAt(i);
+  }
+  return bytes;
+}
+
+function buildPwad(): Uint8Array {
+  const mapLumps = [
+    "THINGS",
+    "LINEDEFS",
+    "SIDEDEFS",
+    "VERTEXES",
+    "SEGS",
+    "SSECTORS",
+    "NODES",
+    "SECTORS",
+    "REJECT",
+    "BLOCKMAP",
+  ];
+  const textBytes = new TextEncoder().encode(
+    "Patch File for DeHackEd v3.0\nChex Quest\n",
+  );
+  const entries: Array<{ name: string; data: Uint8Array }> = [
+    { name: "E1M1", data: new Uint8Array(0) },
+    ...mapLumps.map((name) => ({ name, data: new Uint8Array([1, 2]) })),
+    { name: "DEHACKED", data: textBytes },
+    { name: "DSPISTOL", data: new Uint8Array([0, 3, 0, 0, 255]) },
+  ];
+
+  let cursor = 12;
+  const placed = entries.map((entry) => {
+    const offset = entry.data.length === 0 ? 0 : cursor;
+    if (entry.data.length) cursor += entry.data.length;
+    return { ...entry, offset };
+  });
+  const infotableofs = cursor;
+  const out = new Uint8Array(infotableofs + entries.length * 16);
+  out.set([0x50, 0x57, 0x41, 0x44], 0);
+  out.set(i32(entries.length), 4);
+  out.set(i32(infotableofs), 8);
+  for (const entry of placed) {
+    if (entry.data.length) out.set(entry.data, entry.offset);
+  }
+  placed.forEach((entry, index) => {
+    const at = infotableofs + index * 16;
+    out.set(i32(entry.offset), at);
+    out.set(i32(entry.data.length), at + 4);
+    out.set(name8(entry.name), at + 8);
+  });
+  return out;
+}
+
+console.log("Doom WAD directory");
+{
+  const bytes = buildPwad();
+  const wad = parseWad(bytes);
+  check("parses PWAD", wad?.identification === "PWAD");
+  check("13 lumps", wad?.lumps.length === 13, String(wad?.lumps.length));
+  check("map E1M1", wad?.maps.join(",") === "E1M1", wad?.maps.join(","));
+  check(
+    "DEHACKED is text",
+    wad?.lumps.find((lump) => lump.name === "DEHACKED")?.role === "text",
+  );
+  check(
+    "random bytes rejected",
+    parseWad(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])) == null,
+  );
+  const iwad = buildPwad();
+  iwad.set([0x49, 0x57, 0x41, 0x44], 0);
+  check("IWAD label", parseWad(iwad)?.label === "Doom IWAD");
+
+  const file = new File([bytes as BlobPart], "chex.wad", {
+    type: "application/octet-stream",
+  });
+  const loaded = await loadDroppedFile(file);
+  check("load kind wad", loaded.kind === "wad", loaded.kind);
+  if (loaded.kind === "wad") {
+    const composed = await composeForFile(loaded);
+    const types = composed.finalSpec
+      ? Object.values(composed.finalSpec.elements).map((e) => e.type)
+      : [];
+    check("compose route wad", composed.route === "wad", composed.route);
+    check("WadBrowser", types.includes("WadBrowser"), types.join(","));
+    check("not BinaryInspector", !types.includes("BinaryInspector"));
+  }
 }
 
 if (failed) {

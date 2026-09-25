@@ -125,7 +125,21 @@ const samples: LoadedFile[] = [
       "000000  50 4b 03 04 14 00 06 00 08 00 00 00 21 00 00 00  PK..........!...",
   },
   {
+    kind: "wad",
+    title: "Chex",
+    filename: "chex.wad",
+    mimeType: "application/octet-stream",
+    size: 326,
+    wadId: "smoke-wad-1",
+    identification: "PWAD",
+    formatLabel: "Doom PWAD",
+    lumpCount: 13,
+    mapCount: 1,
+    mapNames: ["E1M1"],
+  },
+  {
     kind: "unknown",
+
     title: "Mystery",
     filename: "mystery.bin",
     mimeType: "application/octet-stream",
@@ -189,9 +203,11 @@ for (const file of selected) {
     (file.kind !== "video" || types.includes("VideoPlayer")) &&
     (file.kind !== "tracker" || types.includes("TrackerPlayer")) &&
     (file.kind !== "archive" || types.includes("ArchiveBrowser")) &&
+    (file.kind !== "wad" || types.includes("WadBrowser")) &&
     (file.kind !== "unknown" ||
       types.includes("InventedViewer") ||
       types.includes("BinaryInspector")) &&
+
     (file.kind !== "json" ||
       types.includes("Input") ||
       types.includes("Switch"));

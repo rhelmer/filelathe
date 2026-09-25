@@ -28,6 +28,28 @@ function parseSpecJson(specJson: string): Spec | null {
   }
 }
 
+/** Hex/metadata peek without importing BinaryInspector (avoids a cycle). */
+function InspectPeek({ invent }: { invent: InventPayload }) {
+  return (
+    <div className="space-y-3">
+      <div className="text-xs text-muted-foreground">
+        {invent.filename} · {invent.mimeType} · {invent.size} bytes
+      </div>
+      {invent.sampleText ? (
+        <pre className="max-h-40 overflow-auto rounded-lg border bg-muted/30 p-3 font-mono text-[11px] leading-snug whitespace-pre-wrap break-all">
+          {invent.sampleText}
+        </pre>
+      ) : null}
+      <div>
+        <div className="mb-1 text-xs font-medium">Hex preview</div>
+        <pre className="max-h-56 overflow-auto rounded-lg border bg-muted/30 p-3 font-mono text-[11px] leading-snug whitespace-pre">
+          {invent.hexPreview || "(empty)"}
+        </pre>
+      </div>
+    </div>
+  );
+}
+
 export function InventedViewer({
   props,
 }: {
@@ -45,6 +67,7 @@ export function InventedViewer({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [promptOpen, setPromptOpen] = useState(false);
+  const [mode, setMode] = useState<"invent" | "inspect">("invent");
   const [registry, setRegistry] = useState<typeof RegistryType | null>(null);
 
   useEffect(() => {
@@ -110,6 +133,7 @@ export function InventedViewer({
             ? `Fallback mini-app (${data.reason}).`
             : "Fallback mini-app (Haiku unavailable or invalid output).",
       );
+      setMode("invent");
       if (data.modelUnavailable) {
         toast({
           title: "Haiku unavailable",
@@ -134,19 +158,48 @@ export function InventedViewer({
     }
   }
 
+  if (mode === "inspect") {
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs text-muted-foreground">
+            Binary inspector — switch back to keep the invented mini-app.
+          </p>
+          <button
+            type="button"
+            className="shrink-0 text-xs font-medium underline-offset-2 hover:underline"
+            onClick={() => setMode("invent")}
+          >
+            Back to mini-app
+          </button>
+        </div>
+        <InspectPeek invent={props.invent} />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-3">
       {note ? <p className="text-xs text-muted-foreground">{note}</p> : null}
 
       <div className="space-y-2 rounded-lg border bg-muted/30 p-3">
         <div className="flex items-center justify-between gap-2">
-          <button
-            type="button"
-            className="text-xs font-medium underline-offset-2 hover:underline"
-            onClick={() => setPromptOpen((value) => !value)}
-          >
-            {promptOpen ? "Hide" : "Show"} invent prompt
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              className="text-xs font-medium underline-offset-2 hover:underline"
+              onClick={() => setPromptOpen((value) => !value)}
+            >
+              {promptOpen ? "Hide" : "Show"} invent prompt
+            </button>
+            <button
+              type="button"
+              className="text-xs font-medium underline-offset-2 hover:underline"
+              onClick={() => setMode("inspect")}
+            >
+              Inspect binary
+            </button>
+          </div>
           <button
             type="button"
             className="rounded-full bg-primary px-3 py-1 text-xs text-primary-foreground disabled:opacity-50"
