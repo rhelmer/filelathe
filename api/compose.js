@@ -2822,9 +2822,6 @@ async function composeForFile(file, options = {}) {
   }
 }
 
-// src/fetch-resource.ts
-var MAX_BYTES = 15 * 1024 * 1024;
-
 // src/server/rate-limit.ts
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
@@ -2856,10 +2853,8 @@ function createMemoryKv() {
 var RATE_LIMITS = {
   invent: { max: 10, windowMs: 60 * 6e4 },
   // 10 / hour
-  compose: { max: 60, windowMs: 60 * 6e4 },
+  compose: { max: 60, windowMs: 60 * 6e4 }
   // 60 / hour
-  fetch: { max: 30, windowMs: 60 * 6e4 }
-  // 30 / hour
 };
 var memoryKv = createMemoryKv();
 var upstashLimiters = /* @__PURE__ */ new Map();

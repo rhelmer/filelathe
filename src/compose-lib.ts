@@ -321,5 +321,5 @@ export async function composeUI(
   } = {},
 ): Promise<ComposeResult> {
   if (options.file) return composeForFile(options.file, options);
-  throw new Error("Drop a file or paste a URL to compose a UI.");
+  throw new Error("Drop a file to compose a UI.");
 }

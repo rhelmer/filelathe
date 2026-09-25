@@ -5,13 +5,12 @@ import { ApiRequestError } from "./api-error";
  * Never send filenames, sample text, hex, full URLs, or file contents.
  */
 
-export type FileOpenSource = "drop" | "picker" | "url" | "archive";
+export type FileOpenSource = "drop" | "picker" | "archive";
 
 export type FileOpenFailReason =
   | "network"
   | "rate_limit"
   | "compose"
-  | "fetch"
   | "drop_empty"
   | "unknown";
 
@@ -64,7 +63,7 @@ export function extensionFromFilename(filename: string): string {
 
 export function classifyOpenError(
   error: unknown,
-  stage: "compose" | "fetch" | "load",
+  stage: "compose" | "load",
 ): FileOpenFailReason {
   if (error instanceof ApiRequestError) {
     if (error.code === "rate_limit") return "rate_limit";
@@ -79,7 +78,6 @@ export function classifyOpenError(
       return "network";
     }
   }
-  if (stage === "fetch") return "fetch";
   if (stage === "compose") return "compose";
   return "unknown";
 }

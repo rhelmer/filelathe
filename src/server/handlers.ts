@@ -1,8 +1,4 @@
 import { composeForFile } from "../compose-lib";
-import {
-  FetchResourceError,
-  fetchRemoteResource,
-} from "../fetch-resource";
 import type { LoadedFile } from "../files";
 import { inventViewerSpec } from "../invent-viewer";
 import {
@@ -12,33 +8,6 @@ import {
   readJsonBody,
   withRateLimit,
 } from "./http";
-
-export async function handleFetchResource(request: Request): Promise<Response> {
-  if (request.method !== "POST") {
-    return errorResponse(405, "Method not allowed", { code: "bad_request" });
-  }
-
-  return withRateLimit(request, "fetch", async () => {
-    try {
-      const body = await readJsonBody<{ url?: string }>(request);
-      if (!body.url) {
-        return errorResponse(400, "url is required", { code: "bad_request" });
-      }
-      const resource = await fetchRemoteResource(body.url, {
-        signal: AbortSignal.timeout(30_000),
-      });
-      return jsonResponse(resource);
-    } catch (error) {
-      if (error instanceof FetchResourceError) {
-        console.error(error);
-        return errorResponse(error.status, error.message, {
-          code: error.status >= 500 ? "internal" : "bad_request",
-        });
-      }
-      return catchApiError(error);
-    }
-  });
-}
 
 export async function handleInventViewer(request: Request): Promise<Response> {
   if (request.method !== "POST") {

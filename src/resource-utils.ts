@@ -1,25 +1,3 @@
-export function isProbablyUrl(value: string): boolean {
-  const trimmed = value.trim();
-  if (!/^https?:\/\//i.test(trimmed)) return false;
-  try {
-    const url = new URL(trimmed);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
-export function filenameFromUrl(url: string): string {
-  try {
-    const parsed = new URL(url);
-    const last = parsed.pathname.split("/").filter(Boolean).pop();
-    if (last && last.includes(".")) return decodeURIComponent(last);
-    return parsed.hostname.replace(/^www\./, "") || "link";
-  } catch {
-    return "link";
-  }
-}
-
 export function toHexPreview(bytes: Uint8Array, max = 256): string {
   const slice = bytes.slice(0, max);
   const parts: string[] = [];
@@ -56,9 +34,9 @@ export function tryDecodeText(bytes: Uint8Array): string | null {
 }
 
 /**
- * Make fetched HTML usable in a srcdoc iframe: resolve relative URLs against
- * the original page, browse in-frame by default, and drop CSP metas that block
- * snapshot assets. Per-link `target="_blank"` still opens a new tab.
+ * Make local HTML usable in a srcdoc iframe: resolve relative URLs when a
+ * source URL is known, browse in-frame by default, and drop CSP metas that
+ * block snapshot assets. Per-link `target="_blank"` still opens a new tab.
  */
 export function rewriteHtmlForSnapshot(
   html: string,

@@ -12,7 +12,7 @@ import {
 import { buildInventPrompt } from "./invent-prompt";
 import { deleteModule, nextModuleId, putModule } from "./module-store";
 import { promoteOfficeFormat } from "./office";
-import { filenameFromUrl, toHexPreview, tryDecodeText } from "./resource-utils";
+import { toHexPreview, tryDecodeText } from "./resource-utils";
 
 /** Normalized payload produced from a dropped/selected file. */
 export type LoadedFile =

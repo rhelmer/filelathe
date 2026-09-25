@@ -7,7 +7,7 @@ import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
 import { createMemoryKv, type KvLike } from "./kv";
 
-export type RateLimitBucket = "invent" | "compose" | "fetch";
+export type RateLimitBucket = "invent" | "compose";
 
 export type RateLimitConfig = {
   max: number;
@@ -19,7 +19,6 @@ export type RateLimitConfig = {
 export const RATE_LIMITS: Record<RateLimitBucket, RateLimitConfig> = {
   invent: { max: 10, windowMs: 60 * 60_000 }, // 10 / hour
   compose: { max: 60, windowMs: 60 * 60_000 }, // 60 / hour
-  fetch: { max: 30, windowMs: 60 * 60_000 }, // 30 / hour
 };
 
 export type RateLimitResult =

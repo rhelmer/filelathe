@@ -128,7 +128,7 @@ function formatPage(format: SeoFormat) {
   const howSteps =
     format.capability === "invent"
       ? [
-          "Drop your file (or paste a URL) on the Filelathe homepage.",
+          "Drop your file on the Filelathe homepage.",
           "Filelathe detects the extension and invents a small mini-app for that format.",
           "Inspect the result in a floating window — reuse saved mini-apps next time.",
         ]
