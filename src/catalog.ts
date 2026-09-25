@@ -100,7 +100,7 @@ const dashboardExtras = {
       title: z.string().nullable(),
     }),
     description:
-      "Fetched HTML webpage snapshot: sandboxed Preview iframe + Source tab + open-original link",
+      "HTML webpage snapshot: sandboxed Preview iframe + Source tab + open-original link",
   },
   BinaryInspector: {
     props: z.object({

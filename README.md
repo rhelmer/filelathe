@@ -2,7 +2,7 @@
 
 **Live:** [filelathe.com](https://filelathe.com)
 
-Drop a file or paste a URL and get a floating window with the right tool — media players, editors, inspectors, or a freshly invented mini-app for formats nothing else handles.
+Drop a file and get a floating window with the right tool — media players, editors, inspectors, or a freshly invented mini-app for formats nothing else handles.
 
 Dual-model idea: **Jev** decides and composes; **Haiku** invents Specs when the format is unknown. Hosted as a **Vite SPA + Vercel serverless APIs**.
 
@@ -31,7 +31,7 @@ Open the printed local URL (default port `5174`).
 
 1. Push the repo and import the project in Vercel (framework: Vite / `vercel.json`).
 2. Set env vars: `TYPESAFE_API_KEY`, `ANTHROPIC_API_KEY`, plus Upstash Redis (Vercel → Integrations → Upstash, or paste REST URL/token).
-3. Deploy. Static UI builds to `dist/`; APIs live in `api/` (`compose`, `invent-viewer`, `fetch-resource`) with `maxDuration` up to 300s for invent/compose.
+3. Deploy. Static UI builds to `dist/`; APIs live in `api/` (`compose`, `invent-viewer`) with `maxDuration` up to 300s.
 
 ```bash
 pnpm build   # vite build → dist/
@@ -46,14 +46,13 @@ Sliding windows (per client IP), invent tightest:
 | --- | --- |
 | `/api/invent-viewer` | 10 / hour |
 | `/api/compose` | 60 / hour |
-| `/api/fetch-resource` | 30 / hour |
 
 Exceeded calls return `429` + `Retry-After`; the UI shows a toast. Missing Jev keys return `503` (`model_unavailable`). Haiku downtime uses a fallback Spec and a warning toast.
 
 ## How it works
 
 ```
-drop / URL
+drop
     │
     ▼
 detect FileKind (image, pdf, csv, tracker, archive, … or unknown)
@@ -133,7 +132,7 @@ Nothing is uploaded to a durable backend. Files live in the browser (and briefly
 | **In-memory `Map`** (`module-store.ts`) | Tracker module `ArrayBuffer`s | Current page session only — never sent to Jev/compose |
 | **In-memory `Map`** (`archive-store.ts`) | Archive container `ArrayBuffer`s | Current page session only — never sent to Jev/compose (persisted in IndexedDB like trackers) |
 | **React state** (`App.tsx`) | Open windows, geometry, Specs | Until refresh / close |
-| **API request** | Bodies for `/api/compose`, `/api/invent-viewer`, `/api/fetch-resource` | Ephemeral; no disk write of user files |
+| **API request** | Bodies for `/api/compose`, `/api/invent-viewer` | Ephemeral; no disk write of user files |
 | **Upstash Redis** | Rate-limit counters | TTL ≈ window length |
 | **`.env` / Vercel env** | API keys | Not committed |
 
@@ -153,13 +152,12 @@ Only Specs with `inventedBy: "haiku"` are reused from cache (not fallbacks). Pla
 
 - No cloud blob store, DB, or multi-user sync  
 - Dropped file bytes are not persisted after the window closes (except tracker modules in the session Map, and Spec JSON in IndexedDB — not the original file)  
-- Remote URLs are fetched server-side once; the response is treated like a drop
 
 ## Project map
 
 | Path | Purpose |
 | --- | --- |
-| `src/App.tsx` | Drop/URL UI, windows, IndexedDB cache lookup/save |
+| `src/App.tsx` | Drop UI, windows, IndexedDB cache lookup/save |
 | `src/dev-server.ts` | Local Vite + same API handlers as Vercel |
 | `src/api-entries/` | Thin Vercel route entries (source for esbuild) |
 | `api/*.js` | Bundled serverless routes (committed — Vercel discovers them before build) |

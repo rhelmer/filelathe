@@ -105,7 +105,7 @@ const samples: LoadedFile[] = [
 
 console.log("Filelathe");
 console.log("---------");
-console.log("1. pnpm dev → open the URL → drop a file or paste a URL.");
+console.log("1. pnpm dev → open the URL → drop a file.");
 console.log(
   "2. pnpm file-smoke  (or --kind=audio|image|json|csv|text|markdown|pdf|video|tracker|unknown)",
 );

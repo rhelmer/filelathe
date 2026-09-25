@@ -4,11 +4,7 @@ import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer as createViteServer } from "vite";
-import {
-  handleCompose,
-  handleFetchResource,
-  handleInventViewer,
-} from "./server/handlers";
+import { handleCompose, handleInventViewer } from "./server/handlers";
 
 const port = Number(process.env.PORT ?? 5174);
 const rootDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -72,9 +68,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse) {
   const request = await toWebRequest(req);
 
   let response: Response;
-  if (url.pathname === "/api/fetch-resource") {
-    response = await handleFetchResource(request);
-  } else if (url.pathname === "/api/invent-viewer") {
+  if (url.pathname === "/api/invent-viewer") {
     response = await handleInventViewer(request);
   } else if (url.pathname === "/api/compose") {
     response = await handleCompose(request);

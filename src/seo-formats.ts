@@ -401,7 +401,7 @@ export const SEO_FORMATS: SeoFormat[] = [
     capability: "view",
     group: "web",
     description:
-      "Open HTML files or paste a URL to preview a page in Filelathe’s web viewer.",
+      "Open HTML files to preview a page in Filelathe’s web viewer.",
     blurb:
       "Local HTML files and fetched URLs open in a sandboxed page preview so you can glance at markup without leaving the tab.",
   },
@@ -792,8 +792,8 @@ export const SEO_GUIDES: SeoGuide[] = [
       {
         heading: "When the network is used",
         paragraphs: [
-          "Opening a URL fetches through Filelathe’s fetch API. Composing a UI may send metadata (name, type, small samples) so the right tool or an invented mini-app can be chosen. Rate limits apply on those API routes.",
-          "If you are handling secrets (.env, private keys), prefer local files you trust and avoid pasting sensitive URLs.",
+          "Composing a UI may send metadata (name, type, small samples) so the right tool or an invented mini-app can be chosen. Rate limits apply on those API routes.",
+          "If you are handling secrets (.env, private keys), prefer local files you trust.",
         ],
       },
     ],
@@ -807,7 +807,7 @@ export const SEO_SITE = {
   homeTitle:
     "Filelathe — open XM, PDF, CSV, images & more in your browser",
   homeDescription:
-    "Drop a file or paste a URL to open it in your browser. Play tracker modules, view PDFs, edit images, inspect CSV/JSON, or invent a mini-app for formats nothing else handles. Private in-tab tools.",
+    "Drop a file to open it in your browser. Play tracker modules, view PDFs, edit images, inspect CSV/JSON, or invent a mini-app for formats nothing else handles. Private in-tab tools.",
 } as const;
 
 export function capabilityVerb(capability: SeoCapability): string {

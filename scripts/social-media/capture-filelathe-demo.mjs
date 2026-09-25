@@ -138,36 +138,25 @@ async function uploadFile(page, filePath) {
   await input.setInputFiles(filePath);
 }
 
-async function openUrl(page, url) {
-  // Floating windows can cover the form on tall/portrait viewports
+async function downloadHtmlFixture(url, destPath) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to download ${url}: ${res.status}`);
+  const html = await res.text();
+  fs.writeFileSync(destPath, html, "utf8");
+  return destPath;
+}
+
+async function uploadHtmlFromUrl(page, url, destPath) {
   await minimizeAllWindows(page);
   await page.waitForTimeout(400);
-
-  // Wait out any in-flight compose so openFromUrl doesn't no-op on busy
   await page
     .waitForFunction(() => {
       const busyLabel = document.body.innerText.includes("Working…");
       return !busyLabel;
     }, { timeout: 60_000 })
     .catch(() => undefined);
-
-  const field = page.locator('input[type="url"]').first();
-  await field.waitFor({ state: "visible", timeout: 30_000 });
-  await field.click({ force: true });
-  await field.fill(url);
-  // React controlled input — ensure state matches before submit
-  await field.evaluate((el, value) => {
-    const input = el;
-    const setter = Object.getOwnPropertyDescriptor(
-      HTMLInputElement.prototype,
-      "value",
-    )?.set;
-    setter?.call(input, value);
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-    input.dispatchEvent(new Event("change", { bubbles: true }));
-  }, url);
-  await page.waitForTimeout(150);
-  await field.press("Enter");
+  await downloadHtmlFixture(url, destPath);
+  await uploadFile(page, destPath);
 }
 
 async function clickTrackerPlay(page) {
@@ -390,9 +379,10 @@ async function browseRhelmerProjects(page) {
     }, projectsUrl);
     console.log("  navigated preview → /projects/");
   } else {
-    console.log("  no iframe frame — opening /projects via Open URL");
+    console.log("  no iframe frame — opening /projects via HTML upload");
     await minimizeAllWindows(page);
-    await openUrl(page, projectsUrl);
+    const projectsHtml = path.join(tmpDir, "demo-projects.html");
+    await uploadHtmlFromUrl(page, projectsUrl, projectsHtml);
     await page
       .locator("[data-webpage-viewer]")
       .first()
@@ -582,8 +572,9 @@ async function runDemoScene(page, videoEpochMs, cfg = {}) {
   await closeAllWindows(page);
   await page.waitForTimeout(400);
 
-  // 3) Web page — open rhelmer.org and browse to Projects
-  await openUrl(page, DEMO_PAGE_URL);
+  // 3) Web page — open a saved HTML snapshot and browse to Projects
+  const demoPageHtml = path.join(tmpDir, "demo-page.html");
+  await uploadHtmlFromUrl(page, DEMO_PAGE_URL, demoPageHtml);
   await page
     .locator("[data-webpage-viewer]")
     .first()

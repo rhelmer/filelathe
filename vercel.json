@@ -10,9 +10,6 @@
     },
     "api/invent-viewer.js": {
       "maxDuration": 300
-    },
-    "api/fetch-resource.js": {
-      "maxDuration": 60
     }
   },
   "rewrites": [

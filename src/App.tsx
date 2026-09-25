@@ -11,7 +11,6 @@ import {
 } from "./analytics";
 import { readApiError, toastMessageForApiError } from "./api-error";
 import { AppDock } from "./AppDock";
-import { fetchedToFile, type FetchedResource } from "./fetch-resource";
 import {
   labelForKind,
   loadDroppedFile,
@@ -20,7 +19,6 @@ import {
 } from "./files";
 import { InventingAnimation } from "./InventingAnimation";
 import { buildInventPrompt } from "./invent-prompt";
-import { isProbablyUrl } from "./resource-utils";
 import { registry } from "./registry";
 import {
   lookupSandboxViewer,
@@ -168,12 +166,11 @@ export function App() {
   const undoWorkspaceRef = useRef<() => void>(() => {});
   const redoWorkspaceRef = useRef<() => void>(() => {});
   const [status, setStatus] = useState(
-    "Drop a file or paste a URL — a new window opens for each one.",
+    "Drop a file — a new window opens for each one.",
   );
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   const [dragOver, setDragOver] = useState(false);
-  const [urlDraft, setUrlDraft] = useState("");
   const [specsRefresh, setSpecsRefresh] = useState(0);
   const [sessionReady, setSessionReady] = useState(false);
   const activeIdRef = useRef(activeId);
@@ -431,7 +428,7 @@ export function App() {
     setStatus(
       remaining.length
         ? `Closed window · ${remaining.length} open`
-        : "Drop a file or paste a URL — a new window opens for each one.",
+        : "Drop a file — a new window opens for each one.",
     );
   }
 
@@ -886,7 +883,7 @@ export function App() {
   }
 
   const openFromFileRef = useRef<
-    (raw: File | undefined, source: Exclude<FileOpenSource, "url">) => void
+    (raw: File | undefined, source: FileOpenSource) => void
   >(() => undefined);
 
   // ArchiveBrowser opens extracted entries through the normal drop path.
@@ -895,10 +892,7 @@ export function App() {
     return () => setArchiveOpener(null);
   }, []);
 
-  async function openFromFile(
-    raw: File | undefined,
-    source: Exclude<FileOpenSource, "url">,
-  ) {
+  async function openFromFile(raw: File | undefined, source: FileOpenSource) {
     if (!raw) return; // picker cancel — stay quiet
     if (busyRef.current) {
       toast({
@@ -928,51 +922,6 @@ export function App() {
   }
   openFromFileRef.current = openFromFile;
 
-  async function openFromUrl(rawUrl: string) {
-    if (!rawUrl.trim()) return;
-    if (busyRef.current) {
-      toast({
-        title: "Still working",
-        description: "Wait for the current file to finish before opening another.",
-        variant: "warning",
-        durationMs: 4000,
-      });
-      return;
-    }
-    track("file_open", { source: "url" });
-    setBusyFlag(true);
-    setStatus("Fetching URL…");
-    let stage: "fetch" | "compose" = "fetch";
-    try {
-      const response = await fetch("/api/fetch-resource", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: rawUrl.trim() }),
-        signal: AbortSignal.timeout(60_000),
-      });
-      if (!response.ok) throw await readApiError(response);
-      const data = (await response.json()) as FetchedResource;
-
-      const file = await loadDroppedFile(fetchedToFile(data));
-      const withSource =
-        file.kind === "unknown" || file.kind === "webpage"
-          ? { ...file, sourceUrl: data.url }
-          : file;
-      stage = "compose";
-      await composeAndOpen(withSource, "url");
-      setUrlDraft("");
-    } catch (error) {
-      track("file_open_failed", {
-        source: "url",
-        reason: classifyOpenError(error, stage),
-      });
-      toastApiFailure(error);
-      setStatus(error instanceof Error ? error.message : String(error));
-    } finally {
-      setBusyFlag(false);
-    }
-  }
-
   function fileFromDataTransfer(dt: DataTransfer | null): File | null {
     if (!dt) return null;
     if (dt.files?.length) return dt.files.item(0);
@@ -992,13 +941,6 @@ export function App() {
     const file = fileFromDataTransfer(dt);
     if (file) {
       void openFromFile(file, "drop");
-      return;
-    }
-    const uri =
-      dt?.getData("text/uri-list") || dt?.getData("text/plain") || "";
-    const firstLine = uri.split("\n")[0]?.trim() ?? "";
-    if (firstLine && isProbablyUrl(firstLine)) {
-      void openFromUrl(firstLine);
       return;
     }
     // Finder Recents / smart folders often advertise Files but leave FileList empty.
@@ -1068,9 +1010,9 @@ export function App() {
             </div>
           </div>
           <p className="max-w-2xl text-muted-foreground">
-            Drop a file or paste a URL to open it in your browser — play XM/MOD
-            trackers, view PDFs, edit images, inspect CSV/JSON, or invent a
-            mini-app for formats nothing else handles.
+            Drop a file to open it in your browser — play XM/MOD trackers, view
+            PDFs, edit images, inspect CSV/JSON, or invent a mini-app for
+            formats nothing else handles.
           </p>
         </header>
 
@@ -1086,7 +1028,7 @@ export function App() {
             } ${busy ? "opacity-70" : ""}`}
           >
             <p className="text-lg font-medium">
-              {busy ? "Working…" : "Drop a file or URL"}
+              {busy ? "Working…" : "Drop a file"}
             </p>
             {busy ? (
               <div className="mt-4 flex flex-col items-center gap-3">
@@ -1110,32 +1052,9 @@ export function App() {
               </div>
             ) : (
               <p className="mt-2 text-sm text-muted-foreground">
-                media · docs · data · anything else (invent mini-app) · https://…
+                media · docs · data · anything else (invent mini-app)
               </p>
             )}
-            <form
-              className="mx-auto mt-4 flex max-w-lg gap-2"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void openFromUrl(urlDraft);
-              }}
-            >
-              <input
-                type="url"
-                value={urlDraft}
-                disabled={busy}
-                placeholder="https://example.com/file.json"
-                className="min-w-0 flex-1 rounded-full border bg-background px-4 py-2 text-sm"
-                onChange={(event) => setUrlDraft(event.target.value)}
-              />
-              <button
-                type="submit"
-                disabled={busy || !urlDraft.trim()}
-                className="rounded-full border px-4 py-2 text-sm disabled:opacity-50"
-              >
-                Open URL
-              </button>
-            </form>
           </div>
 
           {/* Outside drop zone so Finder drops aren't eaten by <input type=file>. */}
@@ -1172,9 +1091,9 @@ export function App() {
         <SavedSpecsPanel refreshToken={specsRefresh} />
         {windows.length === 0 ? (
           <p className="py-16 text-center text-sm text-muted-foreground">
-            Windows float over the page once you drop a file or URL. Drag the
-            title bar to move, resize from the corner, or minimize to the
-            taskbar. Undo close with ⌘Z / Ctrl+Z.
+            Windows float over the page once you drop a file. Drag the title
+            bar to move, resize from the corner, or minimize to the taskbar.
+            Undo close with ⌘Z / Ctrl+Z.
           </p>
         ) : null}
 
