@@ -122,12 +122,62 @@ export function wrapBinaryInspector(
   };
 }
 
+export function wrapWadBrowser(
+  file: Extract<LoadedFile, { kind: "wad" }>,
+  note: string | null = null,
+): Spec {
+  return {
+    root: "card",
+    elements: {
+      card: {
+        type: "Card",
+        props: {
+          title: null,
+          description: null,
+          maxWidth: "full",
+          centered: null,
+        },
+        children: ["wad"],
+      },
+      wad: {
+        type: "WadBrowser",
+        props: {
+          wadId: file.wadId,
+          filename: file.filename,
+          mimeType: file.mimeType,
+          size: file.size,
+          identification: file.identification,
+          formatLabel: file.formatLabel,
+          lumpCount: file.lumpCount,
+          mapCount: file.mapCount,
+          mapNames: file.mapNames,
+          note,
+        },
+        children: [],
+      },
+    },
+  };
+}
+
 /** Auto-compose UI for a loaded file — no user prompt required. */
 export async function composeForFile(
   file: LoadedFile,
   options: { signal?: AbortSignal } = {},
 ): Promise<ComposeResult> {
   let enriched = file;
+
+  if (file.kind === "wad") {
+    // Recognized lump directory — do not ask Jev invent vs inspect.
+    return {
+      events: [],
+      finalSpec: wrapWadBrowser(file),
+      stopReason: "finish",
+      prompt: promptForFile(file),
+      kind: "wad",
+      file,
+      route: "wad",
+    };
+  }
 
   if (file.kind === "unknown" && !file.inventedSpec) {
     const route = await routeUnknownFile(

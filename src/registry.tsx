@@ -2,6 +2,7 @@ import { useRef } from "react";
 import { defineRegistry } from "@json-render/react";
 import { shadcnComponents } from "@json-render/shadcn";
 import { ArchiveBrowser } from "./ArchiveBrowser";
+import { WadBrowser } from "./WadBrowser";
 import { BinaryInspector } from "./BinaryInspector";
 import { catalog } from "./catalog";
 import { InventedViewer } from "./InventedViewer";
@@ -133,6 +134,7 @@ export const { registry } = defineRegistry(catalog, {
     MarkdownView,
     WebPageViewer,
     ArchiveBrowser,
+    WadBrowser,
     BinaryInspector,
     InventedViewer,
   },

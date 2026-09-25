@@ -40,5 +40,8 @@ jobs:
       - name: Invent smoke
         run: pnpm invent-smoke
 
+      - name: WAD smoke
+        run: pnpm wad-smoke
+
       - name: Build
         run: pnpm build

@@ -13,6 +13,7 @@ import { buildInventPrompt } from "./invent-prompt";
 import { deleteModule, nextModuleId, putModule } from "./module-store";
 import { promoteOfficeFormat } from "./office";
 import { filenameFromUrl, toHexPreview, tryDecodeText } from "./resource-utils";
+import { parseWad } from "./wad";
 
 /** Normalized payload produced from a dropped/selected file. */
 export type LoadedFile =
@@ -126,6 +127,21 @@ export type LoadedFile =
       peekXml: string | null;
       /** Hex preview of the container header only. */
       hexPreview: string;
+    }
+  | {
+      kind: "wad";
+      title: string;
+      filename: string;
+      mimeType: string;
+      size: number;
+      /** Session id for the raw WAD bytes (archive-store). */
+      wadId: string;
+      identification: "IWAD" | "PWAD";
+      formatLabel: string;
+      lumpCount: number;
+      mapCount: number;
+      /** First map markers, for the summary when bytes are restored. */
+      mapNames: string[];
     }
   | {
       kind: "unknown";
@@ -610,6 +626,25 @@ export async function loadDroppedFile(file: File): Promise<LoadedFile> {
   const buffer = await file.arrayBuffer();
   const bytes = new Uint8Array(buffer);
 
+  const wad = parseWad(bytes);
+  if (wad) {
+    const wadId = nextArchiveId();
+    putArchive(wadId, buffer);
+    return {
+      kind: "wad",
+      title,
+      filename: file.name,
+      mimeType: mimeType || "application/octet-stream",
+      size: file.size,
+      wadId,
+      identification: wad.identification,
+      formatLabel: wad.label,
+      lumpCount: wad.lumps.length,
+      mapCount: wad.maps.length,
+      mapNames: wad.maps.slice(0, 64),
+    };
+  }
+
   const archiveFormat = sniffArchiveFormat(bytes, file.name, mimeType);
   if (archiveFormat) {
     // Documents/sheets → same viewers as markdown / CSV when we can extract.
@@ -705,6 +740,9 @@ export function revokeLoadedFile(file: LoadedFile | null) {
   if (file.kind === "archive") {
     deleteArchive(file.archiveId);
   }
+  if (file.kind === "wad") {
+    deleteArchive(file.wadId);
+  }
 }
 
 /** Internal prompt used by auto-compose (not shown to the user). */
@@ -734,6 +772,8 @@ export function promptForFile(file: LoadedFile): string {
       return "Show a tracker player for the loaded module";
     case "archive":
       return "Show the archive browser for the loaded container: list entries and extracted text";
+    case "wad":
+      return "Show the Doom WAD directory: maps and lumps, not a hex inspector or emulator";
     case "unknown":
       return "Show the invented catalog Spec viewer for this unrecognized resource";
   }
@@ -765,6 +805,8 @@ export function labelForKind(kind: FileKind) {
       return "Tracker player";
     case "archive":
       return "Archive";
+    case "wad":
+      return "Doom WAD";
     case "unknown":
       return "Invented Spec";
   }

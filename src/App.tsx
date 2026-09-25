@@ -231,6 +231,7 @@ export function App() {
               return getModule(w.file.moduleId) != null;
             if (w.file.kind === "archive")
               return getArchive(w.file.archiveId) != null;
+            if (w.file.kind === "wad") return getArchive(w.file.wadId) != null;
             return true;
           });
           const dropped = revived.length - usable.length;
