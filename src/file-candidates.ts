@@ -37,6 +37,7 @@ export function buildFileCandidates(file: LoadedFile): Candidate[] {
     file.kind === "slides" ||
     file.kind === "tracker" ||
     file.kind === "archive" ||
+    file.kind === "wad" ||
     file.kind === "csv";
 
   add(
@@ -239,6 +240,27 @@ export function buildFileCandidates(file: LoadedFile): Candidate[] {
     });
   }
 
+  if (file.kind === "wad") {
+    add(
+      "wad_browser",
+      `WadBrowser: Doom ${file.identification} directory for ${JSON.stringify(file.filename)} (${file.lumpCount} lumps, ${file.mapCount} maps). Always include. Never a hex inspector or an emulator.`,
+      "WadBrowser",
+      {
+        wadId: file.wadId,
+        filename: file.filename,
+        mimeType: file.mimeType,
+        size: file.size,
+        identification: file.identification,
+        formatLabel: file.formatLabel,
+        lumpCount: file.lumpCount,
+        mapCount: file.mapCount,
+        mapNames: file.mapNames,
+        note: null,
+      },
+      "data:wad",
+    );
+  }
+
   if (file.kind === "archive") {
     add(
       "archive_browser",
@@ -407,6 +429,15 @@ export function stateForFile(file: LoadedFile) {
   if (file.kind === "slides") {
     base.file.src = file.src;
     base.file.format = file.format;
+  }
+  if (file.kind === "wad") {
+    base.file.wadId = file.wadId;
+    base.file.identification = file.identification;
+    base.file.formatLabel = file.formatLabel;
+    base.file.size = file.size;
+    base.file.lumpCount = file.lumpCount;
+    base.file.mapCount = file.mapCount;
+    base.file.mapNames = file.mapNames;
   }
   if (file.kind === "archive") {
     base.file.archiveId = file.archiveId;

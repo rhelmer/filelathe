@@ -1,6 +1,7 @@
 /**
  * Jev-backed routing for unrecognized drops: use a host player when we have
- * one, never invent emulators, otherwise invent a Spec UI or show a binary inspector.
+ * one, never invent emulators, otherwise prefer inventing a Spec mini-app
+ * (with inspect as a fallback / user choice).
  */
 
 import type { JsonValue } from "@typesafe-ai/sdk";
@@ -29,10 +30,14 @@ export type UnknownRoute =
       reason: string;
     };
 
-function heuristicInventOrInspect(
+/**
+ * Deterministic invent-vs-inspect when Jev is unavailable.
+ * Planned emulator formats stay inspect-only; everything else invents.
+ */
+export function heuristicInventOrInspect(
   filename: string,
   mimeType: string,
-  sampleText: string | null,
+  _sampleText: string | null = null,
 ): Extract<UnknownRoute, { action: "invent" | "inspect" }> {
   const matches = matchPlayers(filename, mimeType);
   const planned = plannedPlayer(matches);
@@ -43,16 +48,9 @@ function heuristicInventOrInspect(
       reason: `Matched planned emulator ${planned.id} — inspect only until a host player ships.`,
     };
   }
-  if (!sampleText || sampleText.trim().length < 20) {
-    return {
-      action: "inspect",
-      player: null,
-      reason: "Little or no decodable text — binary inspector.",
-    };
-  }
   return {
     action: "invent",
-    reason: "Decodable text — invent a catalog Spec mini-app.",
+    reason: "No planned host player — invent a catalog Spec mini-app.",
   };
 }
 
@@ -103,7 +101,7 @@ export async function routeUnknownFile(
         },
         players: playerRegistrySummary() as unknown as JsonValue,
         guidance:
-          "Never invent an emulator, CPU, disk controller, or game console. Those must come from the host player registry. Prefer invent only for readable source/config/text that benefits from a json-render mini-app. Prefer inspect for opaque binaries, archives, and ROMs/disks with no registered player.",
+          "Never invent an emulator, CPU, disk controller, or game console — those must come from the host player registry. Prefer invent (a json-render Spec mini-app) for unrecognized files, including opaque binaries, unless the file clearly needs a planned registry emulator. Prefer inspect only when a planned emulator/player is the right host and is not wired yet, or when inventing a mini-app would not help.",
       } as { [key: string]: JsonValue },
       questions: {
         route: {
@@ -112,9 +110,9 @@ export async function routeUnknownFile(
             "How should the drop→UI host handle this unrecognized file?",
           criteria: {
             invent:
-              "Decodable text, source, config, or markup — invent a small json-render Spec viewer/editor. Not an emulator.",
+              "Default for unrecognized files: invent a small json-render Spec mini-app (text, config, markup, or opaque binary that can still use a useful viewer/notes/hex UI). Not an emulator.",
             inspect:
-              "Opaque binary, ROM, disk, archive, or anything that would need an emulator/player we do not have — show hex/metadata inspector only.",
+              "Only when a planned host emulator/player is required and not yet wired, or inventing a mini-app is clearly not useful — show hex/metadata inspector only.",
           },
         },
       },

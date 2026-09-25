@@ -40,5 +40,9 @@ jobs:
       - name: Invent smoke
         run: pnpm invent-smoke
 
+      - name: Archive smoke
+        run: pnpm archive-smoke
+
       - name: Build
         run: pnpm build
+

@@ -14,9 +14,11 @@
     "file-smoke": "tsx --env-file=.env src/file-smoke.ts",
     "invent-smoke": "tsx src/invent-smoke.ts",
     "archive-smoke": "tsx src/archive-smoke.ts",
+    "route-unknown-smoke": "tsx src/route-unknown-smoke.ts",
     "office-smoke": "tsx src/office-smoke.ts",
     "check-types": "tsc --noEmit",
-    "verify": "pnpm check-types && pnpm invent-smoke && pnpm archive-smoke && pnpm office-smoke && pnpm build",
+    "verify": "pnpm check-types && pnpm invent-smoke && pnpm archive-smoke && pnpm office-smoke && pnpm route-unknown-smoke && pnpm build",
+
     "demo:capture": "node scripts/social-media/capture-filelathe-demo.mjs"
   },
   "dependencies": {

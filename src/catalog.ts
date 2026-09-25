@@ -115,6 +115,22 @@ const dashboardExtras = {
     description:
       "Hex/metadata inspector for opaque binaries and for formats whose emulator is planned but not wired. Never a fake emulator.",
   },
+  WadBrowser: {
+    props: z.object({
+      wadId: z.string(),
+      filename: z.string(),
+      mimeType: z.string(),
+      size: z.number(),
+      identification: z.enum(["IWAD", "PWAD"]),
+      formatLabel: z.string(),
+      lumpCount: z.number(),
+      mapCount: z.number(),
+      mapNames: z.array(z.string()),
+      note: z.string().nullable(),
+    }),
+    description:
+      "Doom IWAD/PWAD lump directory: map markers, text lumps, and a per-lump text or hex peek. Not an emulator. WAD bytes stay client-side; never invent this and never send the file to the hex inspector.",
+  },
   ArchiveBrowser: {
     props: z.object({
       archiveId: z.string(),
