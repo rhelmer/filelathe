@@ -6,9 +6,10 @@
     <title>Filelathe — open XM, PDF, CSV, images &amp; more in your browser</title>
     <meta
       name="description"
-      content="Drop a file to open it in your browser. Play tracker modules, view PDFs, edit images, inspect CSV/JSON, or invent a mini-app for formats nothing else handles. Private in-tab tools."
+      content="Drop a file to open it in your browser. Play tracker modules, view PDFs, edit images, inspect CSV/JSON, or invent a mini-app for new formats."
     />
     <link rel="canonical" href="https://www.filelathe.com/" />
+    <link rel="sitemap" type="application/xml" title="Sitemap" href="https://www.filelathe.com/sitemap.xml" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Filelathe" />
     <meta property="og:url" content="https://www.filelathe.com/" />
@@ -55,7 +56,26 @@
     </script>
   </head>
   <body>
+    <!-- Crawlable fallback. Removed before paint so it does not duplicate the app. -->
+    <div id="seo-fallback">
+      <h1>Filelathe</h1>
+      <p>
+        Drop a file or paste a URL to open it in your browser — play tracker
+        modules, view PDFs, edit images, inspect CSV/JSON, or invent a mini-app
+        for formats nothing else handles.
+      </p>
+      <p>
+        <a href="/formats/">Formats</a>
+        ·
+        <a href="/guides/">Guides</a>
+        ·
+        <a href="/sitemap.xml">Sitemap</a>
+      </p>
+    </div>
     <div id="root"></div>
+    <script>
+      document.getElementById("seo-fallback")?.remove();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
     <script
       defer

@@ -807,7 +807,7 @@ export const SEO_SITE = {
   homeTitle:
     "Filelathe — open XM, PDF, CSV, images & more in your browser",
   homeDescription:
-    "Drop a file to open it in your browser. Play tracker modules, view PDFs, edit images, inspect CSV/JSON, or invent a mini-app for formats nothing else handles. Private in-tab tools.",
+    "Drop a file to open it in your browser. Play tracker modules, view PDFs, edit images, inspect CSV/JSON, or invent a mini-app for new formats.",
 } as const;
 
 export function capabilityVerb(capability: SeoCapability): string {
