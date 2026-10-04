@@ -8,11 +8,13 @@ import { fileURLToPath } from "node:url";
 import {
   SEO_FORMATS,
   SEO_GUIDES,
+  SEO_OFFICE_LANDINGS,
   SEO_SITE,
   capabilityVerb,
   type SeoFormat,
   type SeoGuide,
 } from "../src/seo-formats.ts";
+import type { SeoOfficeLanding } from "../src/seo-office.ts";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const publicDir = path.join(root, "public");
@@ -23,6 +25,35 @@ function esc(text: string) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+/** Escape text, then allow only same-site [label](/path/) links. */
+function richText(text: string) {
+  return esc(text).replace(
+    /\[([^\]]+)\]\((\/[a-z0-9./_-]+)\)/gi,
+    (_match, label: string, href: string) => `<a href="${href}">${label}</a>`,
+  );
+}
+
+const OFFICE_INSTALL_SLUGS = new Set([
+  "docx",
+  "doc",
+  "odt",
+  "xls",
+  "xlsx",
+  "ppt",
+  "pptx",
+]);
+
+function formatTitle(format: SeoFormat, landing: SeoOfficeLanding | undefined) {
+  if (!landing) {
+    const verb = capabilityVerb(format.capability);
+    return `${verb} .${format.ext} online — ${format.name} · Filelathe`;
+  }
+  if (OFFICE_INSTALL_SLUGS.has(format.slug)) {
+    return `Open .${format.ext} online — no upload, no Office install · Filelathe`;
+  }
+  return `Open .${format.ext} online — no upload, stays in your browser · Filelathe`;
 }
 
 /** Umami auto-tracks clicks on elements with data-umami-event. */
@@ -118,15 +149,31 @@ function relatedLinks(slugs: string[]) {
     .join("")}</ul>`;
 }
 
+function guideLinks(slugs: string[]) {
+  const items = slugs
+    .map((slug) => SEO_GUIDES.find((g) => g.slug === slug))
+    .filter((g): g is SeoGuide => Boolean(g));
+  if (!items.length) return "";
+  return `<ul class="list">${items
+    .map(
+      (g) =>
+        `<li><a href="/guides/${esc(g.slug)}/">${esc(g.title)}</a></li>`,
+    )
+    .join("")}</ul>`;
+}
+
 function formatPage(format: SeoFormat) {
+  const landing = SEO_OFFICE_LANDINGS[format.slug];
   const verb = capabilityVerb(format.capability);
-  const h1 = `${verb} .${format.ext.toUpperCase()} files in your browser`;
-  const title = `${verb} .${format.ext} online — ${format.name} · Filelathe`;
+  const h1 =
+    landing?.h1 ?? `${verb} .${format.ext.toUpperCase()} files in your browser`;
+  const title = formatTitle(format, landing);
   const also = (format.also ?? []).filter((x) => x !== format.ext);
   const related = relatedLinks(also);
 
-  const howSteps =
-    format.capability === "invent"
+  const howSteps = landing
+    ? landing.steps
+    : format.capability === "invent"
       ? [
           "Drop your file on the Filelathe homepage.",
           "Filelathe detects the extension and invents a small mini-app for that format.",
@@ -140,6 +187,44 @@ function formatPage(format: SeoFormat) {
             : "Use the on-page controls to view or edit.",
         ];
 
+  const officeSections = landing
+    ? `
+      ${landing.sections
+        .map(
+          (section) => `
+      <section>
+        <h2>${esc(section.heading)}</h2>
+        ${section.paragraphs.map((p) => `<p>${richText(p)}</p>`).join("")}
+      </section>`,
+        )
+        .join("")}
+
+      <section>
+        <h2>What you can and can't do</h2>
+        <h3>You can</h3>
+        <ul class="list">${landing.can.map((item) => `<li>${richText(item)}</li>`).join("")}</ul>
+        <h3>You can't</h3>
+        <ul class="list">${landing.cant.map((item) => `<li>${richText(item)}</li>`).join("")}</ul>
+      </section>
+
+      <section>
+        <h2>FAQ</h2>
+        ${landing.faqs
+          .map(
+            (faq) => `
+        <h3>${esc(faq.q)}</h3>
+        <p>${richText(faq.a)}</p>`,
+          )
+          .join("")}
+      </section>`
+    : `
+      <section>
+        <h2>Privacy</h2>
+        <p>File bytes are read in your browser for viewing and playback. Unlike upload-to-convert sites, Filelathe is built around in-tab tools. API calls may use filename, type, and small samples to choose or invent a UI.</p>
+      </section>`;
+
+  const guides = landing ? guideLinks(landing.guides) : "";
+
   const body = `
     <main>
       <p class="eyebrow">.${esc(format.ext)} · ${esc(format.name)}</p>
@@ -149,14 +234,10 @@ function formatPage(format: SeoFormat) {
 
       <section>
         <h2>How it works</h2>
-        <ol>${howSteps.map((s) => `<li>${esc(s)}</li>`).join("")}</ol>
+        <ol>${howSteps.map((s) => `<li>${richText(s)}</li>`).join("")}</ol>
         <p>${esc(format.blurb)}</p>
       </section>
-
-      <section>
-        <h2>Privacy</h2>
-        <p>File bytes are read in your browser for viewing and playback. Unlike upload-to-convert sites, Filelathe is built around in-tab tools. API calls may use filename, type, and small samples to choose or invent a UI.</p>
-      </section>
+      ${officeSections}
 
       ${
         related
@@ -164,11 +245,21 @@ function formatPage(format: SeoFormat) {
           : ""
       }
 
+      ${
+        guides
+          ? `<section><h2>Guides</h2>${guides}</section>`
+          : ""
+      }
+
       <section>
         <h2>More</h2>
         <ul class="list">
           <li><a href="/formats/">Browse all supported formats</a></li>
-          <li><a href="/guides/private-in-browser-file-viewer/">What stays local in your browser</a></li>
+          ${
+            landing
+              ? ""
+              : `<li><a href="/guides/private-in-browser-file-viewer/">What stays local in your browser</a></li>`
+          }
           ${
             format.group === "tracker"
               ? `<li><a href="/guides/open-tracker-modules-online/">Tracker modules guide</a></li>`
@@ -184,46 +275,60 @@ function formatPage(format: SeoFormat) {
     </main>
   `;
 
+  const jsonLd: Array<Record<string, unknown>> = [
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      name: `Filelathe — ${format.name}`,
+      url: `${SEO_SITE.origin}/open/${format.slug}/`,
+      applicationCategory: "UtilityApplication",
+      operatingSystem: "Web browser",
+      description: format.description,
+      offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        {
+          "@type": "ListItem",
+          position: 1,
+          name: "Filelathe",
+          item: `${SEO_SITE.origin}/`,
+        },
+        {
+          "@type": "ListItem",
+          position: 2,
+          name: "Formats",
+          item: `${SEO_SITE.origin}/formats/`,
+        },
+        {
+          "@type": "ListItem",
+          position: 3,
+          name: `.${format.ext}`,
+          item: `${SEO_SITE.origin}/open/${format.slug}/`,
+        },
+      ],
+    },
+  ];
+
+  if (landing) {
+    jsonLd.push({
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      mainEntity: landing.faqs.map((faq) => ({
+        "@type": "Question",
+        name: faq.q,
+        acceptedAnswer: { "@type": "Answer", text: faq.a },
+      })),
+    });
+  }
+
   return layout({
     title,
     description: format.description,
     canonicalPath: `/open/${format.slug}/`,
-    jsonLd: [
-      {
-        "@context": "https://schema.org",
-        "@type": "WebApplication",
-        name: `Filelathe — ${format.name}`,
-        url: `${SEO_SITE.origin}/open/${format.slug}/`,
-        applicationCategory: "UtilityApplication",
-        operatingSystem: "Web browser",
-        description: format.description,
-        offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-      },
-      {
-        "@context": "https://schema.org",
-        "@type": "BreadcrumbList",
-        itemListElement: [
-          {
-            "@type": "ListItem",
-            position: 1,
-            name: "Filelathe",
-            item: `${SEO_SITE.origin}/`,
-          },
-          {
-            "@type": "ListItem",
-            position: 2,
-            name: "Formats",
-            item: `${SEO_SITE.origin}/formats/`,
-          },
-          {
-            "@type": "ListItem",
-            position: 3,
-            name: `.${format.ext}`,
-            item: `${SEO_SITE.origin}/open/${format.slug}/`,
-          },
-        ],
-      },
-    ],
+    jsonLd,
     body,
   });
 }
@@ -240,7 +345,7 @@ function guidePage(guide: SeoGuide) {
           (section) => `
       <section>
         <h2>${esc(section.heading)}</h2>
-        ${section.paragraphs.map((p) => `<p>${esc(p)}</p>`).join("")}
+        ${section.paragraphs.map((p) => `<p>${richText(p)}</p>`).join("")}
       </section>`,
         )
         .join("")}
@@ -274,8 +379,9 @@ function formatsHub() {
   }
   const labels: Record<string, string> = {
     tracker: "Tracker modules",
-    media: "Audio, video & images",
+    office: "Documents & Office",
     documents: "Documents & text",
+    media: "Audio, video & images",
     data: "Data",
     web: "Web",
     config: "Config & inventable formats",
@@ -321,7 +427,7 @@ function formatsHub() {
   return layout({
     title: "All formats — open files in your browser · Filelathe",
     description:
-      "Browse file formats Filelathe can open in your browser: XM/MOD trackers, PDF, CSV, images, Markdown, YAML, EDN, and more.",
+      "Browse file formats Filelathe can open in your browser: Word, Excel, PowerPoint, ZIP, XM/MOD trackers, PDF, CSV, images, and more.",
     canonicalPath: "/formats/",
     jsonLd: {
       "@context": "https://schema.org",
@@ -342,7 +448,7 @@ function guidesHub() {
   const body = `
     <main>
       <h1>Guides</h1>
-      <p class="lede">Short notes on opening niche formats and keeping previews in your browser.</p>
+      <p class="lede">Short notes on opening Office files, tracker modules, and other formats — and on what stays in your browser.</p>
       <ul class="list">
         ${SEO_GUIDES.map(
           (g) =>
@@ -355,7 +461,7 @@ function guidesHub() {
   return layout({
     title: "Guides · Filelathe",
     description:
-      "Guides for playing tracker modules, viewing unknown formats, and private in-browser file viewing with Filelathe.",
+      "Guides for opening DOCX without Word, viewing Excel and PowerPoint in the browser, playing tracker modules, and private in-browser file viewing.",
     canonicalPath: "/guides/",
     jsonLd: {
       "@context": "https://schema.org",
@@ -446,6 +552,7 @@ nav a:hover { color: var(--fg); }
 }
 h1 { font-size: clamp(1.75rem, 4vw, 2.25rem); line-height: 1.15; margin: 0.25rem 0 0.75rem; letter-spacing: -0.02em; }
 h2 { font-size: 1.15rem; margin: 1.75rem 0 0.6rem; }
+h3 { font-size: 1rem; margin: 1.05rem 0 0.35rem; }
 .eyebrow {
   text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.72rem;
   color: var(--muted); font-family: ui-sans-serif, system-ui, sans-serif; margin: 0;
@@ -486,7 +593,61 @@ ol, .list { padding-left: 1.2rem; }
 .foot a { color: inherit; }
 `;
 
+function assertOfficeLandings() {
+  const slugs = [
+    "docx",
+    "doc",
+    "odt",
+    "xls",
+    "xlsx",
+    "ppt",
+    "pptx",
+    "zip",
+    "tar",
+    "gz",
+    "tgz",
+  ];
+  for (const slug of slugs) {
+    const format = SEO_FORMATS.find((f) => f.slug === slug);
+    const landing = SEO_OFFICE_LANDINGS[slug];
+    if (!format || !landing) {
+      throw new Error(`Missing office landing for .${slug}`);
+    }
+    if (landing.steps.length < 3) {
+      throw new Error(`.${slug} needs format-specific how-it-works steps`);
+    }
+    if (landing.faqs.length < 3 || landing.faqs.length > 5) {
+      throw new Error(`.${slug} FAQ must have 3–5 questions`);
+    }
+    if (
+      !landing.guides.includes("private-in-browser-file-viewer") ||
+      landing.guides.length < 2
+    ) {
+      throw new Error(`.${slug} must link the privacy guide and another guide`);
+    }
+    for (const guideSlug of landing.guides) {
+      if (!SEO_GUIDES.some((g) => g.slug === guideSlug)) {
+        throw new Error(`.${slug} links missing guide ${guideSlug}`);
+      }
+    }
+    if (format.description.length > 165) {
+      throw new Error(
+        `.${slug} description is ${format.description.length} chars`,
+      );
+    }
+  }
+  const officeOnHub = SEO_FORMATS.filter((f) => f.group === "office").map(
+    (f) => f.slug,
+  );
+  for (const slug of ["docx", "doc", "odt", "xls", "xlsx", "ppt", "pptx"]) {
+    if (!officeOnHub.includes(slug)) {
+      throw new Error(`.${slug} must be in the Documents & Office group`);
+    }
+  }
+}
+
 async function main() {
+  assertOfficeLandings();
   const today = new Date().toISOString().slice(0, 10);
 
   // Clean generated trees so removed slugs disappear.
