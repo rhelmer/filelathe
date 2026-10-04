@@ -2,6 +2,9 @@
  * SEO landing-page catalog. One URL per extension people search for
  * ("open xm online", "csv viewer browser", …). Keep copy query-shaped.
  */
+import { SEO_OFFICE_LANDINGS } from "./seo-office";
+
+export { SEO_OFFICE_LANDINGS };
 
 export type SeoCapability =
   | "play"
@@ -28,6 +31,7 @@ export type SeoFormat = {
     | "tracker"
     | "media"
     | "documents"
+    | "office"
     | "data"
     | "web"
     | "config"
@@ -587,7 +591,7 @@ export const SEO_FORMATS: SeoFormat[] = [
     capability: "inspect",
     group: "archive",
     description:
-      "Open ZIP files in your browser. List entries and click to open any file inside — extraction stays local in your tab.",
+      "Open a .zip in your browser — no upload, no signup, free. The archive stays on your device. Filelathe lists entries and opens a file inside, locally.",
     blurb:
       "Filelathe reads the ZIP directory in your browser, shows the entry list with sizes, and lets you open an inner file (text, image, PDF, or a nested archive) in its own window. Bytes are never uploaded.",
   },
@@ -597,9 +601,9 @@ export const SEO_FORMATS: SeoFormat[] = [
     also: ["odt", "pptx", "xlsx", "zip"],
     name: "Word document (DOCX)",
     capability: "view",
-    group: "archive",
+    group: "office",
     description:
-      "Open DOCX files in your browser. Filelathe extracts the document text and opens it in the document viewer — no Office install.",
+      "View a .docx in your browser — no upload, no signup, free. The file stays on your device. Filelathe reads the Word package and shows the text and images.",
     blurb:
       "DOCX is a ZIP package. Filelathe reads word/document.xml locally, strips the XML to readable prose, embeds word/media images when present, and shows the result in the Markdown document viewer.",
   },
@@ -609,9 +613,9 @@ export const SEO_FORMATS: SeoFormat[] = [
     also: ["ods", "odp", "docx", "zip"],
     name: "OpenDocument Text (ODT)",
     capability: "view",
-    group: "archive",
+    group: "office",
     description:
-      "Open ODT files in your browser. Filelathe extracts content.xml text and shows it in the document viewer.",
+      "Open an .odt in your browser — no upload, no signup, free. The file stays on your device. Filelathe reads OpenDocument text locally. No Office install.",
     blurb:
       "ODT files are ZIP packages. Filelathe reads content.xml in your tab, recovers the prose, and opens it in the document viewer — a quick read without LibreOffice.",
   },
@@ -621,9 +625,9 @@ export const SEO_FORMATS: SeoFormat[] = [
     also: ["docx", "xls", "ppt", "msg"],
     name: "Word document (DOC)",
     capability: "view",
-    group: "archive",
+    group: "office",
     description:
-      "Open classic .doc files in your browser. Filelathe extracts the Word text and shows it in the document viewer — same path as markdown, not a hex dump.",
+      "Open a .doc in your browser — no upload, no signup, free. The file stays on your device. Filelathe reads classic Word text locally. No Office install.",
     blurb:
       "Pre-2007 Word files are OLE Compound Files. Filelathe reads the WordDocument stream (piece table when present), recovers the prose, and opens it in the Markdown document viewer so .doc feels like a readable document instead of an archive or hex inspector.",
   },
@@ -633,9 +637,9 @@ export const SEO_FORMATS: SeoFormat[] = [
     also: ["xlsx", "doc", "ppt", "csv"],
     name: "Excel workbook (XLS)",
     capability: "view",
-    group: "archive",
+    group: "office",
     description:
-      "Open classic .xls workbooks in your browser as an editable spreadsheet grid — same tool used for CSV.",
+      "View a .xls in your browser — no upload, no signup, free. The file stays on your device. Filelathe opens the first Excel sheet as a grid. No Office install.",
     blurb:
       "Excel 97–2003 .xls files are OLE Compound Files. Filelathe parses the BIFF workbook locally with SheetJS and opens the first sheet in the Spreadsheet editor, so classic Excel gets the same grid UX as CSV.",
   },
@@ -645,9 +649,9 @@ export const SEO_FORMATS: SeoFormat[] = [
     also: ["pptx", "doc", "xls"],
     name: "PowerPoint (PPT)",
     capability: "view",
-    group: "archive",
+    group: "office",
     description:
-      "Open classic .ppt decks in your browser. Filelathe lists OLE streams and peeks recoverable slide text locally.",
+      "Open a .ppt in your browser — no upload, no signup, free. The file stays on your device. Filelathe lists OLE streams and peeks slide text. No Office install.",
     blurb:
       "PowerPoint 97–2003 files are OLE Compound Files. Filelathe sniffs the container and lists streams such as PowerPoint Document. For full slide graphics, use .pptx — Filelathe renders modern decks with pptx-wasm.",
   },
@@ -657,9 +661,9 @@ export const SEO_FORMATS: SeoFormat[] = [
     also: ["ppt", "odp", "docx", "xlsx"],
     name: "PowerPoint (PPTX)",
     capability: "view",
-    group: "archive",
+    group: "office",
     description:
-      "Open PPTX decks in your browser with a canvas slide viewer — shapes, images, and charts render locally.",
+      "Open a .pptx in your browser — no upload, no signup, free. The file stays on your device. Filelathe renders slides, images, and charts locally. No Office.",
     blurb:
       "Filelathe opens .pptx with pptx-wasm in your tab: navigate slides, see charts and images, and keep the file on-device. No Office install and no upload.",
   },
@@ -669,9 +673,9 @@ export const SEO_FORMATS: SeoFormat[] = [
     also: ["xls", "ods", "csv", "pptx"],
     name: "Excel workbook (XLSX)",
     capability: "view",
-    group: "archive",
+    group: "office",
     description:
-      "Open XLSX workbooks as an editable spreadsheet grid, with embedded charts shown as bar graphs when chart caches are present.",
+      "View an .xlsx in your browser — no upload, no signup, free. The file stays on your device. Filelathe opens the first sheet, plus chart caches when present.",
     blurb:
       "Filelathe parses the workbook locally, opens the first sheet in the Spreadsheet editor, and surfaces xl/charts data as BarGraph widgets when DrawingML chart caches are available.",
   },
@@ -683,7 +687,7 @@ export const SEO_FORMATS: SeoFormat[] = [
     capability: "inspect",
     group: "archive",
     description:
-      "Open .gz files in your browser. Filelathe decompresses gzip locally and opens the inner file in the right viewer.",
+      "Open a .gz in your browser — no upload, no signup, free. The file stays on your device. Filelathe decompresses gzip locally and opens the inner file.",
     blurb:
       "Gzip wraps a single file. Filelathe decompresses it in your tab with the browser DecompressionStream and opens the result — text, JSON, or a tarball — in its own window.",
   },
@@ -695,7 +699,7 @@ export const SEO_FORMATS: SeoFormat[] = [
     capability: "inspect",
     group: "archive",
     description:
-      "Open TAR files in your browser. List archive members and open any entry — parsing runs locally in your tab.",
+      "Open a .tar in your browser — no upload, no signup, free. The archive stays on your device. Filelathe lists members and opens an entry locally. No terminal.",
     blurb:
       "Filelathe parses ustar/posix tar headers in the browser, lists members with sizes, samples small text files, and opens any entry in its own window. No upload, no extract-to-disk.",
   },
@@ -707,7 +711,7 @@ export const SEO_FORMATS: SeoFormat[] = [
     capability: "inspect",
     group: "archive",
     description:
-      "Open .tar.gz / .tgz files in your browser. Filelathe gunzips then lists the tar members, all locally.",
+      "Open a .tar.gz in your browser — no upload, no signup, free. The archive stays on your device. Filelathe gunzips it, lists the tar, and opens files locally.",
     blurb:
       "Filelathe decompresses the gzip layer with DecompressionStream, then parses the tar inside, so you can browse a .tar.gz and open individual files without a terminal.",
   },
@@ -780,7 +784,20 @@ export const SEO_GUIDES: SeoGuide[] = [
     title: "Private in-browser file viewing (what stays local)",
     description:
       "How Filelathe handles files in your tab, what may hit the API, and why that matters versus upload-to-convert sites.",
-    relatedSlugs: ["pdf", "csv", "png", "xm"],
+    relatedSlugs: [
+      "pdf",
+      "csv",
+      "png",
+      "xm",
+      "docx",
+      "doc",
+      "odt",
+      "xlsx",
+      "xls",
+      "pptx",
+      "ppt",
+      "zip",
+    ],
     sections: [
       {
         heading: "Local-first viewing",
@@ -790,10 +807,103 @@ export const SEO_GUIDES: SeoGuide[] = [
         ],
       },
       {
+        heading: "Office files",
+        paragraphs: [
+          "Word, Excel, and PowerPoint are parsed in the tab too. A [.docx](/open/docx/) is read from its ZIP package (word/document.xml), a [.doc](/open/doc/) from the WordDocument stream, a [.xlsx](/open/xlsx/) or [.xls](/open/xls/) from the first sheet, and a [.pptx](/open/pptx/) on a local slide canvas. A classic [.ppt](/open/ppt/) is an OLE listing with peeked text, not a slideshow. An [.odt](/open/odt/) is the prose from content.xml.",
+          "Each of those pages states what the viewer will and will not show. None of them is an upload-to-convert step.",
+        ],
+      },
+      {
         heading: "When the network is used",
         paragraphs: [
           "Composing a UI may send metadata (name, type, small samples) so the right tool or an invented mini-app can be chosen. Rate limits apply on those API routes.",
           "If you are handling secrets (.env, private keys), prefer local files you trust.",
+        ],
+      },
+    ],
+  },
+  {
+    slug: "open-docx-without-word",
+    title: "How to open a DOCX file without Word",
+    description:
+      "Open a .docx without Word or an upload. Filelathe reads the Word package in your browser — text and embedded images, free, no signup.",
+    relatedSlugs: ["docx", "doc", "odt", "zip"],
+    sections: [
+      {
+        heading: "Open the file in the browser",
+        paragraphs: [
+          "You do not need Word, LibreOffice, or an account. Open Filelathe and use Choose file, or drop the document on a desktop. A [.docx](/open/docx/) is a ZIP package: Filelathe reads word/document.xml in the tab and shows the prose in the document viewer. Images under word/media are appended after the text when they are a common image type, up to 8 images and 600KB each.",
+          "On a Chromebook, Mac, or iPad the same site works. Choose file uses the system picker. Nothing is installed.",
+        ],
+      },
+      {
+        heading: "What you see, and what you do not",
+        paragraphs: [
+          "This is a reading view. Styles, headers, footers, comments, and tracked changes are not laid out, and long documents are cut off around the first 20,000 characters. It does not edit the file or export a PDF.",
+          "A pre-2007 [.doc](/open/doc/) is a different container: an OLE file, text recovered from the WordDocument stream, no image gallery. An [.odt](/open/odt/) is read from content.xml. A .docx sitting inside a ZIP can be opened from the [.zip](/open/zip/) listing, or on its own.",
+        ],
+      },
+      {
+        heading: "Does the file get uploaded?",
+        paragraphs: [
+          "Parsing stays in the tab. Filelathe does not send the document to a conversion site. Choosing the tool window may send the filename, the type, and samples to the API. For the general rule, see [what stays local](/guides/private-in-browser-file-viewer/).",
+        ],
+      },
+    ],
+  },
+  {
+    slug: "view-excel-files-in-the-browser",
+    title: "View Excel files in the browser",
+    description:
+      "View .xlsx and .xls in the browser with no upload and no Excel install. The first sheet opens as a grid on your device. Free, no signup.",
+    relatedSlugs: ["xlsx", "xls", "csv"],
+    sections: [
+      {
+        heading: "Open a workbook without Excel",
+        paragraphs: [
+          "Drop the file or use Choose file. A [.xlsx](/open/xlsx/) opens the first sheet in the spreadsheet grid. Chart caches under xl/charts can show up as bar graphs — first series, up to 4 charts — when those caches exist. A classic [.xls](/open/xls/) is an OLE BIFF file parsed with SheetJS into that same grid. A plain export can go through the [.csv](/open/csv/) viewer.",
+          "Chromebook, Mac, and iPad use the same page. Choose file is the reliable picker; desktop browsers can also take a drop. No Office install.",
+        ],
+      },
+      {
+        heading: "What the grid will and will not do",
+        paragraphs: [
+          "You see about 100 data rows and 40 columns of the first sheet. Later sheets are not opened. Formulas are not recalculated; the cells are the values SheetJS reads. You can edit the grid and download a CSV of those cells. That download is not a new .xlsx, and the original workbook is not modified.",
+          "Classic .xls does not get the chart-cache graphs. Password-protected workbooks are not unlocked.",
+        ],
+      },
+      {
+        heading: "View vs convert",
+        paragraphs: [
+          "Filelathe does not upload the workbook to turn it into PDF or Google Sheets. The parse runs in the browser. An API call may use the filename, type, and samples to choose the window — see [what stays local](/guides/private-in-browser-file-viewer/).",
+        ],
+      },
+    ],
+  },
+  {
+    slug: "open-powerpoint-online",
+    title: "Open PowerPoint online without Office",
+    description:
+      "Open a PowerPoint file online with no upload and no Office install. .pptx slides render in your browser. Classic .ppt is a text peek, not a slideshow.",
+    relatedSlugs: ["pptx", "ppt"],
+    sections: [
+      {
+        heading: "Open a .pptx in the browser",
+        paragraphs: [
+          "Drop a [.pptx](/open/pptx/) or use Choose file. Filelathe checks the package for slide parts and renders them with pptx-wasm on a canvas in the tab. You can move between slides and see shapes, images, and charts the renderer draws. No PowerPoint, no signup, no install — including on a Chromebook, Mac, or iPad.",
+        ],
+      },
+      {
+        heading: "Classic .ppt is not the same viewer",
+        paragraphs: [
+          "A [.ppt](/open/ppt/) from PowerPoint 97–2003 is an OLE Compound File. Filelathe lists streams such as PowerPoint Document and can peek recoverable text. It does not draw slide graphics, and it does not convert .ppt into .pptx.",
+          "The canvas viewer also does not edit slides, play animations, or export a PDF. If the package has no slide parts, you get the ZIP listing instead.",
+        ],
+      },
+      {
+        heading: "Does the deck get uploaded?",
+        paragraphs: [
+          "Rendering runs in the browser. The file is not sent to a conversion site. Choosing the window may send the filename, type, and samples to the API. Details are on [what stays local](/guides/private-in-browser-file-viewer/).",
         ],
       },
     ],
