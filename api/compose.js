@@ -2034,12 +2034,21 @@ function acceptInventedRaw(parsed) {
   }
   return { ok: true, spec: withState };
 }
+var HAIKU_INVENT_MODEL = "claude-haiku-5-5";
 async function callHaiku(prompt, options) {
   const anthropic = createAnthropic({ apiKey: options.apiKey });
   const result = await generateText({
-    model: anthropic("claude-haiku-4-5-20251001"),
+    model: anthropic(HAIKU_INVENT_MODEL),
     abortSignal: options.signal,
-    maxOutputTokens: 4096,
+    // Haiku 5.5 adaptive thinking counts toward max tokens; leave headroom
+    // beyond the previous 4k Spec-only budget.
+    maxOutputTokens: 8192,
+    // Invent previously ran without extended thinking; keep latency/cost low.
+    providerOptions: {
+      anthropic: {
+        effort: "low"
+      }
+    },
     prompt
   });
   return result.text;

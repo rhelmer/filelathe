@@ -404,15 +404,26 @@ function acceptInventedRaw(parsed: unknown): AcceptResult {
   return { ok: true, spec: withState };
 }
 
+/** Claude Haiku 5.5 — invent Spec generation (fixed ID, no date suffix). */
+export const HAIKU_INVENT_MODEL = "claude-haiku-5-5";
+
 async function callHaiku(
   prompt: string,
   options: { signal?: AbortSignal; apiKey: string },
 ): Promise<string> {
   const anthropic = createAnthropic({ apiKey: options.apiKey });
   const result = await generateText({
-    model: anthropic("claude-haiku-4-5-20251001"),
+    model: anthropic(HAIKU_INVENT_MODEL),
     abortSignal: options.signal,
-    maxOutputTokens: 4096,
+    // Haiku 5.5 adaptive thinking counts toward max tokens; leave headroom
+    // beyond the previous 4k Spec-only budget.
+    maxOutputTokens: 8192,
+    // Invent previously ran without extended thinking; keep latency/cost low.
+    providerOptions: {
+      anthropic: {
+        effort: "low",
+      },
+    },
     prompt,
   });
   return result.text;

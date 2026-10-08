@@ -90,10 +90,10 @@ Each open file becomes a floating window (drag, resize, minimize, maximize, pop-
 
 ## Jev vs Haiku
 
-| | **Jev** (TypeSafe System One) | **Haiku** (Claude Haiku 4.5) |
+| | **Jev** (TypeSafe System One) | **Haiku** (Claude Haiku 5.5) |
 | --- | --- | --- |
 | **Role** | Judgment + composition | Generation |
-| **API** | `@typesafe-ai/sdk` → `jev-latest` (or Gateway `typesafe-ai/jev`) | `@ai-sdk/anthropic` → `claude-haiku-4-5-20251001` |
+| **API** | `@typesafe-ai/sdk` → `jev-latest` (or Gateway `typesafe-ai/jev`) | `@ai-sdk/anthropic` → `claude-haiku-5-5` |
 | **Where** | `evaluator.ts`, `route-unknown.ts`, `compose-lib.ts` | `invent-viewer.ts`, `invent-prompt.ts` |
 | **Returns** | Typed choices (and confidence), used to pick layout candidates | Free-form text parsed into a json-render Spec |
 
