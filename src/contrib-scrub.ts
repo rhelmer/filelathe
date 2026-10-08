@@ -115,7 +115,7 @@ export function scrubPromptForContrib(prompt: string | undefined): string | unde
     `Sample text:\n${REDACTED_SAMPLE}\n\n`,
   );
   out = out.replace(
-    /Hex preview \(use in a Hex tab when useful\):[\s\S]*$/i,
+    /Hex preview \([^)]*\):[\s\S]*$/i,
     `Hex preview:\n${REDACTED_HEX}\n`,
   );
   // Older / edited prompts

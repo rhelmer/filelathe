@@ -341,10 +341,11 @@ function analyzeFileSample(filename, sampleText, size) {
       identity: "binary or empty sample",
       facts: [...facts, "No decodable text sample in the first bytes."],
       checks: [
-        "Cannot validate structure without a text decode \u2014 use Hex + Meta only."
+        "Cannot validate structure without a text decode \u2014 treat as opaque bytes.",
+        "Still invent a playful detective UI (guesses, magic bytes, entropy vibes) \u2014 not a bare Hex|Meta dump."
       ],
       metrics,
-      summaryMarkdown: "## Unknown / binary\n\nNo text sample was decoded. Use the Hex tab for a byte preview."
+      summaryMarkdown: "## Mystery bytes\n\nNo text sample decoded from the head of the file. Play file archaeologist: call out magic-byte hunches, size vibes, and what this *might* be \u2014 Hex is a supporting pane, not the whole app."
     };
   }
   const root = xmlRootTag(sample);
@@ -650,7 +651,7 @@ function detectContentKind(filename, sampleText) {
       kind: "edn/clojure config",
       language: "edn",
       wantHex: false,
-      hint: "Mini-app: Tabs Overview (MarkdownView /summary + Badges for :keys) | Edit (Textarea /body) | Notes (Alert with checks). Put sample in state.body and analysis summary in state.summary. No Hex unless binary."
+      hint: "Config atelier: Tabs Overview (MarkdownView /summary \u2014 what this EDN is for, punchy) | Keys (Badges for :keywords) | Edit (Textarea /body) | optional Notes Alert. Put sample in state.body and analysis summary in state.summary. No Hex unless binary."
     };
   }
   if (name.endsWith(".toml") || name.endsWith(".ini") || name.endsWith(".cfg") || name.endsWith(".conf") || name.endsWith(".properties")) {
@@ -658,7 +659,7 @@ function detectContentKind(filename, sampleText) {
       kind: "toml/ini config",
       language: name.endsWith(".properties") ? "properties" : "toml",
       wantHex: false,
-      hint: "Mini-app: Tabs Overview (section keys as Badges + checks Alert) | Edit (Textarea /body) | Raw optional. Prefer editing over a static dump. No Hex."
+      hint: "Config atelier: Tabs Overview (what this config steers + checks Alert) | Sections (Badges for keys) | Edit (Textarea /body). Prefer editing over a static dump. No Hex."
     };
   }
   if (name.endsWith(".yaml") || name.endsWith(".yml")) {
@@ -741,26 +742,26 @@ function detectContentKind(filename, sampleText) {
       kind: "text",
       language: "text",
       wantHex: false,
-      hint: "Mini-app: Tabs Overview (MarkdownView /summary) | Text (Textarea /body). Avoid Hex for readable text."
+      hint: "Mini-app with personality: Tabs Overview (MarkdownView /summary \u2014 what is this, what's quirky about it) | Highlights (Badges/Metrics for interesting bits) | Edit (Textarea /body). Avoid Hex for readable text. Make the Overview fun to read, not a dry file card."
     };
   }
   return {
     kind: "binary/unknown",
     language: "bin",
     wantHex: true,
-    hint: "Mini-app: Tabs Hex (Textarea /hex) | Meta (Badges for mime/size + Alert). No fake text decode."
+    hint: "File-detective mini-app \u2014 NOT a boring Hex|Meta pair. Tabs like Theory (MarkdownView /summary: wild-but-grounded guesses from magic bytes/size/mime) | Clues (Badges/Metrics: size, mime, first-byte hints) | Hex (Textarea /hex as evidence). Optional Alert with a cheeky one-liner. No fake text decode."
   };
 }
 var FEW_SHOTS = `
-EXAMPLE (structured document like sitemap/XML/JSON \u2014 Overview + Source; NO Hex):
-{"op":"set","path":"/state","value":{"activeTab":"overview","summary":"## XML sitemap\\n\\n- Type: urlset\\n- URLs: 12\\n\\n### Checks\\n- Namespace OK","body":"(full file sample)"}}
+EXAMPLE (structured document \u2014 opinionated Overview, not a dump; NO Hex):
+{"op":"set","path":"/state","value":{"activeTab":"overview","summary":"## XML sitemap\\n\\nA crawler treasure map \u2014 12 URLs in this sample.\\n\\n### Checks\\n- Namespace OK\\n- Sample may be truncated","body":"(full file sample)"}}
 {"op":"add","path":"/elements/card","value":{"type":"Card","props":{"title":null,"description":null,"maxWidth":"full","centered":null},"children":["tabs"]}}
 {"op":"add","path":"/elements/tabs","value":{"type":"Tabs","props":{"defaultValue":"overview","value":{"$bindState":"/activeTab"},"tabs":[{"label":"Overview","value":"overview"},{"label":"Structure","value":"structure"},{"label":"Source","value":"source"}]},"children":["paneOverview","paneStructure","paneSource"]}}
 {"op":"add","path":"/elements/paneOverview","value":{"type":"MarkdownView","props":{"markdown":{"$bindState":"/summary"},"title":null},"children":[]}}
 {"op":"add","path":"/elements/paneStructure","value":{"type":"Stack","props":{"direction":"vertical","gap":"sm","align":null,"justify":null,"wrap":null},"children":["mType","mUrls","alertChecks"]}}
 {"op":"add","path":"/elements/mType","value":{"type":"Metric","props":{"label":"Type","value":"urlset","change":null,"changeType":null,"prefix":null,"suffix":null},"children":[]}}
 {"op":"add","path":"/elements/mUrls","value":{"type":"Metric","props":{"label":"URLs","value":"12","change":null,"changeType":null,"prefix":null,"suffix":null},"children":[]}}
-{"op":"add","path":"/elements/alertChecks","value":{"type":"Alert","props":{"title":"Checks","message":"Namespace present. Sample may be truncated.","type":"info"},"children":[]}}
+{"op":"add","path":"/elements/alertChecks","value":{"type":"Alert","props":{"title":"Hot take","message":"Namespace present. Looks crawl-ready.","type":"info"},"children":[]}}
 {"op":"add","path":"/elements/paneSource","value":{"type":"Textarea","props":{"label":"Source","name":"body","placeholder":null,"rows":14,"value":{"$bindState":"/body"},"checks":null,"validateOn":null},"children":[]}}
 {"op":"add","path":"/root","value":"card"}
 
@@ -770,6 +771,18 @@ EXAMPLE (markdown \u2014 Preview + Edit sharing state):
 {"op":"add","path":"/elements/tabs","value":{"type":"Tabs","props":{"defaultValue":"preview","value":{"$bindState":"/activeTab"},"tabs":[{"label":"Preview","value":"preview"},{"label":"Edit","value":"edit"}]},"children":["preview","edit"]}}
 {"op":"add","path":"/elements/preview","value":{"type":"MarkdownView","props":{"markdown":{"$bindState":"/body"},"title":null},"children":[]}}
 {"op":"add","path":"/elements/edit","value":{"type":"Textarea","props":{"label":"Markdown","name":"body","placeholder":null,"rows":14,"value":{"$bindState":"/body"},"checks":null,"validateOn":null},"children":[]}}
+{"op":"add","path":"/root","value":"card"}
+
+EXAMPLE (opaque binary \u2014 file detective; Hex is ONE pane, not the whole app):
+{"op":"set","path":"/state","value":{"activeTab":"theory","summary":"## Case file\\n\\nOpaque bytes, no text head.\\n\\n### Working theory\\n- Magic peek suggests\u2026 (say what the hex implies, or admit ignorance stylishly)\\n- Size vibe: tiny stub vs chunky blob","hex":"(hex preview)"}}
+{"op":"add","path":"/elements/card","value":{"type":"Card","props":{"title":null,"description":null,"maxWidth":"full","centered":null},"children":["tabs"]}}
+{"op":"add","path":"/elements/tabs","value":{"type":"Tabs","props":{"defaultValue":"theory","value":{"$bindState":"/activeTab"},"tabs":[{"label":"Theory","value":"theory"},{"label":"Clues","value":"clues"},{"label":"Hex","value":"hex"}]},"children":["paneTheory","paneClues","paneHex"]}}
+{"op":"add","path":"/elements/paneTheory","value":{"type":"MarkdownView","props":{"markdown":{"$bindState":"/summary"},"title":null},"children":[]}}
+{"op":"add","path":"/elements/paneClues","value":{"type":"Stack","props":{"direction":"vertical","gap":"sm","align":null,"justify":null,"wrap":null},"children":["mSize","mMime","alertHot"]}}
+{"op":"add","path":"/elements/mSize","value":{"type":"Metric","props":{"label":"Size","value":"32","change":null,"changeType":null,"prefix":null,"suffix":" B"},"children":[]}}
+{"op":"add","path":"/elements/mMime","value":{"type":"Metric","props":{"label":"MIME","value":"octet-stream","change":null,"changeType":null,"prefix":null,"suffix":null},"children":[]}}
+{"op":"add","path":"/elements/alertHot","value":{"type":"Alert","props":{"title":"Hot take","message":"Not enough signal to convict \u2014 Hex is the evidence locker.","type":"warning"},"children":[]}}
+{"op":"add","path":"/elements/paneHex","value":{"type":"Textarea","props":{"label":"Hex","name":"hex","placeholder":null,"rows":12,"value":{"$bindState":"/hex"},"checks":null,"validateOn":null},"children":[]}}
 {"op":"add","path":"/root","value":"card"}
 `;
 function buildInventPrompt(input) {
@@ -783,24 +796,26 @@ function buildInventPrompt(input) {
   );
   const catalogPrompt = inventCatalog.prompt({
     mode: "standalone",
-    system: "You invent a useful interactive json-render mini-app for an unrecognized file \u2014 explain what it is, validate what you can, and surface the important bits. Never ship a generic text/hex dump when the file is structured text.",
+    system: "You are Filelathe's mischievous format sommelier: invent a tiny interactive json-render mini-app that makes an unrecognized file feel discovered, not dumped. Be useful and a little delightful \u2014 name the format, run real checks, surface the juicy bits. Never ship a generic text/hex viewer when you can invent a domain-aware tool.",
     customRules: [
       `Only use these components: ${inventCatalog.componentNames.join(", ")}.`,
       "Never invent an emulator, CPU, disk controller, ROM runner, or game console.",
       "Never use InventedViewer, BinaryInspector, AudioPlayer, VideoPlayer, PdfViewer, SlideViewer, PixelEditor, TrackerPlayer, Spreadsheet, or WebPageViewer.",
       "Put derived explanation in state.summary (Markdown) and file body in state.body; bind MarkdownView\u2192/summary and Textarea\u2192/body. Every $bindState/$state path MUST exist in top-level state with real values from ANALYSIS / sample.",
-      'Example state: {"activeTab":"overview","summary":"## \u2026","body":"\u2026"}.',
-      "Preferred panes: Overview (what it is + checks) | Structure or Highlights (Metrics/Badges/Alerts) | Source (editable Textarea). Hex ONLY when ANALYSIS says binary / no text.",
+      'Example state: {"activeTab":"overview","summary":"## \u2026","body":"\u2026"}. For opaque binary use state.hex instead of body.',
+      "Preferred panes for text: Overview (witty but accurate what/why + checks) | Structure or Highlights (Metrics/Badges/Alerts) | Source (editable Textarea).",
+      "Preferred panes for binary: Theory (MarkdownView /summary) | Clues (Metrics/Badges/Alert) | Hex (Textarea /hex). Forbidden: Tabs that are only Hex|Meta or Text|Hex.",
+      "Voice: curious, concrete, lightly playful \u2014 one hot take is good; clowning or fake facts are not. Ground claims in ANALYSIS / sample / hex.",
       "Card is only a border shell (title/description null \u2014 window chrome already shows the name).",
-      "Do not invent fake file contents \u2014 copy body from the sample; copy/adapt summary from ANALYSIS.summaryMarkdown.",
-      "Use Badge, Alert, Heading, Text, Separator, Metric for structure and validation status.",
-      "Typical size: 8\u201316 elements. Forbidden: Card\u2192Markdown poster only; Forbidden for XML/JSON/YAML/sitemap: Tabs that are only Text|Hex.",
+      "Do not invent fake file contents \u2014 copy body from the sample; copy/adapt summary from ANALYSIS.summaryMarkdown (you may punch up the wording).",
+      "Use Badge, Alert, Heading, Text, Separator, Metric for structure, validation, and personality.",
+      "Typical size: 8\u201316 elements. Forbidden: Card\u2192Markdown poster only; Forbidden for XML/JSON/YAML/sitemap/edn/config: Tabs that are only Text|Hex.",
       "Every required props field must be present (null where nullable).",
       'Textarea/Input label must be a string (use "" if unlabeled), never null.',
       'Leaf elements must include "children": [].'
     ]
   });
-  const hexSection = detected.wantHex ? `Hex preview (include a Hex tab):
+  const hexSection = detected.wantHex ? `Hex preview (include as a Hex / evidence pane \u2014 not the only UI):
 ${hex || "(empty)"}` : `Hex preview (DO NOT add a Hex tab for this file \u2014 structured/readable text):
 ${hex.slice(0, 120) || "(empty)"}`;
   return `${catalogPrompt}
@@ -812,7 +827,7 @@ ${FEW_SHOTS}
 TASK
 Invent an interactive mini-app Spec for this file. Follow SpecStream JSONL from the catalog prompt (same shape as the examples).
 
-Goal: a domain-aware tool \u2014 name the format, run the listed checks, show pertinent counts/fields, and keep the full sample editable on Source. Not a summary card and not a hex dump.
+Goal: a domain-aware gadget someone would actually enjoy opening \u2014 name the format, run the listed checks, show pertinent counts/fields, keep the sample editable, and give the Overview a point of view. Not a summary poster. Not a hex dump with a MIME badge.
 
 Detected: ${detected.kind} (language=${detected.language})
 App guidance: ${detected.hint}
@@ -852,7 +867,7 @@ ${options.errors}
 Previous output (truncate if needed \u2014 fix the issues, do not explain):
 ${options.previousOutput.slice(0, 3500)}
 
-Emit a corrected SpecStream JSONL only. Prefer Overview + Structure + Source with state.summary + state.body from ANALYSIS/sample. No poster dumps; no Text|Hex-only for structured text.
+Emit a corrected SpecStream JSONL only. Prefer a playful domain-aware layout: Overview/Theory + Structure/Clues + Source/Hex with state.summary + state.body (or state.hex) from ANALYSIS/sample. No poster dumps; no Text|Hex-only or Hex|Meta-only.
 `;
 }
 
@@ -1152,6 +1167,15 @@ function assessInventedSpecQuality(spec) {
           message: "Tabs are only Text|Hex \u2014 for structured files use Overview (what/checks) + Structure + Source instead of a hex dump."
         });
       }
+      const onlyHexMeta = labels.length === 2 && labels.some((l) => /^hex/.test(l)) && labels.some(
+        (l) => /^(meta|info|about|details|file|metadata)$/.test(l)
+      );
+      if (onlyHexMeta) {
+        issues.push({
+          code: "hex_meta_dump",
+          message: "Tabs are only Hex|Meta \u2014 invent a file-detective UI (Theory + Clues + Hex) with a real Overview, not a bare hex viewer."
+        });
+      }
       const kids = el.children ?? [];
       if (kids.length < 2) {
         issues.push({
@@ -1396,15 +1420,13 @@ var FORBIDDEN_TYPES = /* @__PURE__ */ new Set([
   "Spreadsheet",
   "WebPageViewer"
 ]);
-function isSpecInventPrompt(prompt) {
-  if (!prompt?.trim()) return false;
-  if (/window\.__HIGHLIGHT__/.test(prompt)) return false;
-  if (/TINY syntax highlighter/i.test(prompt)) return false;
-  return /AVAILABLE COMPONENTS/i.test(prompt) || /Output ONLY JSONL patches/i.test(prompt) || /json-render/i.test(prompt);
+function isLegacyHighlighterPrompt(prompt) {
+  if (!prompt) return false;
+  return /window\.__HIGHLIGHT__/.test(prompt) || /TINY syntax highlighter/i.test(prompt);
 }
 function resolveInventPrompt(input, custom) {
   const trimmed = custom?.trim();
-  if (trimmed && isSpecInventPrompt(trimmed)) return trimmed;
+  if (trimmed && !isLegacyHighlighterPrompt(trimmed)) return trimmed;
   return buildInventPrompt(input);
 }
 function validateInventedSpec(value) {

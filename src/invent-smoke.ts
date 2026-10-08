@@ -7,10 +7,16 @@ import {
   assessInventedSpecQuality,
   formatQualityIssues,
 } from "./invent-quality";
-import { analyzeFileSample, detectContentKind } from "./invent-prompt";
+import {
+  analyzeFileSample,
+  buildInventPrompt,
+  detectContentKind,
+  type InventInput,
+} from "./invent-prompt";
 import {
   buildFallbackSpec,
   parseInventedSpec,
+  resolveInventPrompt,
   restrictInventSpec,
   validateInventedSpec,
 } from "./invent-viewer";
@@ -23,7 +29,6 @@ import {
 } from "./resource-utils";
 import { scrubPromptForContrib, scrubSpecForContrib } from "./contrib-scrub";
 import { contribFilename } from "./github-contrib";
-import type { InventInput } from "./invent-prompt";
 import {
   dedupeSandboxRecords,
   orderedSandboxLookupKeys,
@@ -264,6 +269,53 @@ if (dumpParsed) {
     "text_hex flagged",
     q.some((i) => i.code === "text_hex_dump"),
     formatQualityIssues(q),
+  );
+}
+
+console.log("reject hex|meta dump");
+const hexMetaStream = [
+  '{"op":"set","path":"/state","value":{"activeTab":"hex","hex":"00"}}',
+  '{"op":"add","path":"/elements/card","value":{"type":"Card","props":{"title":null,"description":null,"maxWidth":"full","centered":null},"children":["tabs"]}}',
+  '{"op":"add","path":"/elements/tabs","value":{"type":"Tabs","props":{"defaultValue":"hex","value":{"$bindState":"/activeTab"},"tabs":[{"label":"Hex","value":"hex"},{"label":"Meta","value":"meta"}]},"children":["paneHex","paneMeta"]}}',
+  '{"op":"add","path":"/elements/paneHex","value":{"type":"Textarea","props":{"label":"Hex","name":"hex","placeholder":null,"rows":8,"value":{"$bindState":"/hex"},"checks":null,"validateOn":null},"children":[]}}',
+  '{"op":"add","path":"/elements/paneMeta","value":{"type":"Alert","props":{"title":"Meta","message":"octet-stream","type":"info"},"children":[]}}',
+  '{"op":"add","path":"/root","value":"card"}',
+].join("\n");
+const hexMetaParsed = parseInventedSpec(hexMetaStream);
+check("parse hex|meta", hexMetaParsed != null);
+if (hexMetaParsed) {
+  const q = assessInventedSpecQuality(hexMetaParsed as never);
+  check(
+    "hex_meta flagged",
+    q.some((i) => i.code === "hex_meta_dump"),
+    formatQualityIssues(q),
+  );
+}
+
+console.log("custom invent prompt preserved");
+{
+  const input = fixtures[0]!;
+  const custom =
+    "Please invent a playful EDN key explorer with Tabs Overview|Keys|Edit. Use json-render SpecStream only.";
+  check(
+    "resolve keeps user edit",
+    resolveInventPrompt(input, custom) === custom,
+  );
+  const defaultPrompt = buildInventPrompt(input);
+  check(
+    "resolve empty falls back",
+    resolveInventPrompt(input, "   ") === defaultPrompt,
+  );
+  check(
+    "resolve rejects legacy highlighter",
+    resolveInventPrompt(
+      input,
+      "TINY syntax highlighter\nwindow.__HIGHLIGHT__ = 1;",
+    ) === defaultPrompt,
+  );
+  check(
+    "default prompt asks for personality",
+    /format sommelier|file-detective|Hot take/i.test(defaultPrompt),
   );
 }
 

@@ -111,7 +111,7 @@ When routing says `invent`, the server asks Haiku for a Spec that only uses the 
 
 Output is parsed, validated against the invent catalog, and checked by a **quality gate** (rejects “poster” Specs: Card→Markdown dumps without Tabs/Textarea). Failures get **one repair pass**; if still invalid (or Haiku is down / missing key), a host **fallback** Spec is used: Tabs Text|Hex (or Hex|Notes) with real sample/hex in `state` — still interactive, not a crash.
 
-Users can edit the invent prompt in `InventedViewer` and re-run Haiku via `/api/invent-viewer`. Offline checks: `pnpm invent-smoke`.
+Users can edit the invent prompt in `InventedViewer` (**Show invent prompt**) and hit **Regenerate mini-app** — edits are sent as-is and kept in the textarea (not overwritten). Offline checks: `pnpm invent-smoke`.
 
 ### Fallbacks (quick map)
 

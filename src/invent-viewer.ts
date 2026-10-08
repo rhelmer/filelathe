@@ -278,8 +278,7 @@ const FORBIDDEN_TYPES = new Set([
  */
 export function isSpecInventPrompt(prompt: string | null | undefined): boolean {
   if (!prompt?.trim()) return false;
-  if (/window\.__HIGHLIGHT__/.test(prompt)) return false;
-  if (/TINY syntax highlighter/i.test(prompt)) return false;
+  if (isLegacyHighlighterPrompt(prompt)) return false;
   return (
     /AVAILABLE COMPONENTS/i.test(prompt) ||
     /Output ONLY JSONL patches/i.test(prompt) ||
@@ -287,12 +286,27 @@ export function isSpecInventPrompt(prompt: string | null | undefined): boolean {
   );
 }
 
+/** Old invent prompts that asked for HTML highlighters instead of Specs. */
+export function isLegacyHighlighterPrompt(
+  prompt: string | null | undefined,
+): boolean {
+  if (!prompt) return false;
+  return (
+    /window\.__HIGHLIGHT__/.test(prompt) ||
+    /TINY syntax highlighter/i.test(prompt)
+  );
+}
+
+/**
+ * Prefer the caller's prompt (user edits in InventedViewer) unless empty or
+ * a legacy highlighter prompt that cannot produce a Spec.
+ */
 export function resolveInventPrompt(
   input: InventInput,
   custom?: string | null,
 ): string {
   const trimmed = custom?.trim();
-  if (trimmed && isSpecInventPrompt(trimmed)) return trimmed;
+  if (trimmed && !isLegacyHighlighterPrompt(trimmed)) return trimmed;
   return buildInventPrompt(input);
 }
 
