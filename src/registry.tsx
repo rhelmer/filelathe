@@ -10,6 +10,7 @@ import { MarkdownView } from "./MarkdownView";
 import { PdfViewer, VideoPlayer } from "./PdfVideo";
 import { PixelEditor } from "./PixelEditor";
 import { SlideViewer } from "./SlideViewer";
+import { SpecTabs } from "./SpecTabs";
 import { Spreadsheet } from "./Spreadsheet";
 import { TrackerPlayer } from "./TrackerPlayer";
 import { usePersistedMedia } from "./use-persisted-media";
@@ -141,6 +142,8 @@ function SafeLink({
 export const { registry } = defineRegistry(catalog, {
   components: {
     ...shadcnComponents,
+    // Upstream shadcn Tabs never wraps panes in Tabs.Content — override.
+    Tabs: SpecTabs,
     Link: SafeLink,
     Metric,
     BarGraph,
