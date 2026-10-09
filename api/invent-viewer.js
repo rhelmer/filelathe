@@ -1069,10 +1069,10 @@ function hydrateInventedSpec(spec, input) {
     const existing = getByPointer(state, path);
     const leaf = path.split("/").filter(Boolean).pop()?.toLowerCase() ?? "";
     const forceLhsCode = /\.lhs$/i.test(input.filename) && /code|extract|bird/i.test(leaf);
-    const forceFileContent = /source|code|text|content|raw|literate|markdown|body|edit|sample|json|hex/i.test(
+    const isFilePayloadLeaf = /^(body|hex|code|text|raw|source|content|sample|markdown|literate|extract|bird|json|edit)$/i.test(
       leaf
-    ) && typeof existing === "string" && existing.length === 0;
-    if (forceLhsCode || forceFileContent || existing === void 0 || existing === "") {
+    ) || /hex/i.test(leaf);
+    if (forceLhsCode || isFilePayloadLeaf || existing === void 0 || existing === "") {
       setByPointer(state, path, seedValueForPath(path, input, tabDefault));
     }
   }

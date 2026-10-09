@@ -1,6 +1,7 @@
 /** Persist Haiku/fallback invented Specs in IndexedDB for reuse across drops. */
 
 import type { Spec } from "@json-render/core";
+import { scrubPromptForContrib, scrubSpecForContrib } from "./contrib-scrub";
 import { contentDialectId } from "./invent-prompt";
 
 const DB_NAME = "jev-invented-specs";
@@ -177,7 +178,10 @@ export async function saveSandboxViewer(input: {
   const savedAt = Date.now();
   const contentKey = await sandboxContentKey(input);
   const template = sandboxTemplateTarget(input);
-  const prompt = input.prompt ?? undefined;
+  // Never persist dropped-file bytes in IndexedDB templates. Hydrate refills
+  // body/hex from the current drop; Propose PR then cannot leak leftovers.
+  const spec = scrubSpecForContrib(input.spec);
+  const prompt = scrubPromptForContrib(input.prompt ?? undefined);
 
   const contentRecord: SandboxRecord = {
     key: contentKey,
@@ -186,7 +190,7 @@ export async function saveSandboxViewer(input: {
     dialect: template.dialect,
     mimeType: input.mimeType,
     filenameHint: input.filename,
-    spec: input.spec,
+    spec,
     prompt,
     inventedBy: input.inventedBy,
     savedAt,
@@ -201,7 +205,7 @@ export async function saveSandboxViewer(input: {
     dialect: template.dialect,
     mimeType: input.mimeType,
     filenameHint: input.filename,
-    spec: input.spec,
+    spec,
     prompt,
     inventedBy: input.inventedBy,
     savedAt,

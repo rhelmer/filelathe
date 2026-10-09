@@ -193,15 +193,15 @@ export function hydrateInventedSpec(spec: Spec, input: InventInput): Spec {
     const leaf = path.split("/").filter(Boolean).pop()?.toLowerCase() ?? "";
     const forceLhsCode =
       /\.lhs$/i.test(input.filename) && /code|extract|bird/i.test(leaf);
-    const forceFileContent =
-      /source|code|text|content|raw|literate|markdown|body|edit|sample|json|hex/i.test(
+    // Always re-seed file payloads from the *current* drop. Cached Specs used
+    // to keep a previous file's body/hex when non-empty — wrong and leaky.
+    const isFilePayloadLeaf =
+      /^(body|hex|code|text|raw|source|content|sample|markdown|literate|extract|bird|json|edit)$/i.test(
         leaf,
-      ) &&
-      typeof existing === "string" &&
-      existing.length === 0;
+      ) || /hex/i.test(leaf);
     if (
       forceLhsCode ||
-      forceFileContent ||
+      isFilePayloadLeaf ||
       existing === undefined ||
       existing === ""
     ) {

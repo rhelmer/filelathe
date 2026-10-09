@@ -12,7 +12,8 @@
 
 import type { SandboxRecord } from "./sandbox-store";
 import {
-  scrubPromptForContrib,
+  REDACTED_PROMPT,
+  contribLooksLeaky,
   scrubSpecForContrib,
 } from "./contrib-scrub";
 
@@ -32,7 +33,10 @@ export type ContribPayload = {
   /** Set for dialect templates (xml-sitemap), separate from the extension. */
   dialect?: string;
   savedAt: string;
-  /** Invent prompt with sample/hex sections redacted. */
+  /**
+   * Never the live invent prompt (it embeds sample/hex). Stub only so
+   * reviewers know a prompt was used.
+   */
   prompt?: string;
   /** Spec structure only — file payloads emptied. */
   spec: SandboxRecord["spec"];
@@ -64,14 +68,21 @@ export function buildContribPayload(record: SandboxRecord): ContribPayload {
     scope: record.scope,
     dialect: record.dialect,
     savedAt: new Date(record.savedAt).toISOString(),
-    prompt: scrubPromptForContrib(record.prompt),
+    // Invent prompts embed sample/hex/ANALYSIS — never paste them into PRs.
+    prompt: record.prompt?.trim() ? REDACTED_PROMPT : undefined,
     spec: scrubSpecForContrib(record.spec),
     contentsRedacted: true,
   };
 }
 
 export function contribJson(record: SandboxRecord): string {
-  return `${JSON.stringify(buildContribPayload(record), null, 2)}\n`;
+  const body = `${JSON.stringify(buildContribPayload(record), null, 2)}\n`;
+  if (contribLooksLeaky(body)) {
+    throw new Error(
+      "Refusing to export: scrubbed contrib JSON still looks like it contains file contents. Try regenerating the mini-app, or download after clearing Textareas.",
+    );
+  }
+  return body;
 }
 
 /** Open GitHub "Create new file" under contrib/invented/ with name filled in. */
@@ -115,8 +126,8 @@ export async function proposeSpecOnGithub(
     `- Extension: \`.${record.extension || "bin"}\``,
     `- MIME: \`${record.mimeType}\``,
     "",
-    "Dropped-file contents (samples, hex, Textarea bodies) were redacted before paste.",
-    "Please review the mini-app Spec before merging.",
+    "Dropped-file contents (samples, hex, Textarea/Markdown bodies) and the invent prompt were redacted before paste.",
+    "Only mini-app structure / bindings should remain — please skim before merging.",
   ]
     .filter((line) => line !== null)
     .join("\n");
