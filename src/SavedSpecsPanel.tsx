@@ -72,7 +72,7 @@ export function SavedSpecsPanel({
         toast({
           title: "Mini-app copied to clipboard",
           description:
-            "File contents were redacted. Opening GitHub in a moment — paste (⌘V / Ctrl+V), commit on a new branch, then open a pull request.",
+            "Samples, hex, and invent prompt were redacted. Opening GitHub in a moment — paste (⌘V / Ctrl+V), skim for leftovers, commit on a new branch, then open a pull request.",
           variant: "success",
           durationMs: 16_000,
         });
@@ -82,9 +82,10 @@ export function SavedSpecsPanel({
       window.open(result.url, "_blank", "noopener,noreferrer");
     } catch (error) {
       toast({
-        title: "Could not open GitHub",
+        title: "Could not propose mini-app",
         description: error instanceof Error ? error.message : String(error),
         variant: "error",
+        durationMs: 12_000,
       });
     } finally {
       setBusyKey(null);
@@ -143,8 +144,8 @@ export function SavedSpecsPanel({
       {open ? (
         <div className="mt-3 space-y-3">
           <p className="text-xs text-muted-foreground">
-            Haiku mini-apps for unknown files stay in this browser. Propose one
-            to{" "}
+            Haiku mini-apps for unknown files stay in this browser (file samples
+            are stripped on save). Propose one to{" "}
             <a
               className="underline"
               href={`https://github.com/${CONTRIB_REPO}`}
@@ -155,10 +156,10 @@ export function SavedSpecsPanel({
             </a>{" "}
             — GitHub opens a new file under{" "}
             <code className="text-[11px]">contrib/invented/</code>. Propose PR /
-            Download strip your file contents (samples, hex, Textarea bodies) and
-            anonymize the filename before copy — only the mini-app structure is
-            shared. Paste into the editor, then commit / PR (GitHub will fork if
-            needed).
+            Download share structure only: samples, hex, Textarea/Markdown
+            bodies, and the invent prompt are redacted; the filename becomes{" "}
+            <code className="text-[11px]">example.&lt;ext&gt;</code>. Paste into
+            the editor, then commit / PR (GitHub will fork if needed).
           </p>
 
           {records.length === 0 ? (
@@ -209,7 +210,21 @@ export function SavedSpecsPanel({
                         <button
                           type="button"
                           className="rounded-full border px-2.5 py-1 text-[11px]"
-                          onClick={() => downloadContribJson(record)}
+                          onClick={() => {
+                            try {
+                              downloadContribJson(record);
+                            } catch (error) {
+                              toast({
+                                title: "Download blocked",
+                                description:
+                                  error instanceof Error
+                                    ? error.message
+                                    : String(error),
+                                variant: "error",
+                                durationMs: 12_000,
+                              });
+                            }
+                          }}
                         >
                           Download
                         </button>

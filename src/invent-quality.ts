@@ -90,6 +90,19 @@ export function assessInventedSpecQuality(spec: Spec): InventQualityIssue[] {
             "Tabs are only Text|Hex — for structured files use Overview (what/checks) + Structure + Source instead of a hex dump.",
         });
       }
+      const onlyHexMeta =
+        labels.length === 2 &&
+        labels.some((l) => /^hex/.test(l)) &&
+        labels.some((l) =>
+          /^(meta|info|about|details|file|metadata)$/.test(l),
+        );
+      if (onlyHexMeta) {
+        issues.push({
+          code: "hex_meta_dump",
+          message:
+            "Tabs are only Hex|Meta — invent a file-detective UI (Theory + Clues + Hex) with a real Overview, not a bare hex viewer.",
+        });
+      }
       const kids = el.children ?? [];
       if (kids.length < 2) {
         issues.push({

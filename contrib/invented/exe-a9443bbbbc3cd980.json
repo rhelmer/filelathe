@@ -1,0 +1,127 @@
+{
+  "version": 1,
+  "source": "filelathe",
+  "inventedBy": "haiku",
+  "extension": "exe",
+  "mimeType": "application/octet-stream",
+  "filenameHint": "example.exe",
+  "sandboxKey": "content:application/octet-stream:exe:16760d5ab8411168a9443bbbbc3cd980",
+  "scope": "content",
+  "savedAt": "2026-10-08T00:35:15.247Z",
+  "prompt": "(invent prompt redacted — contained file sample/hex; regenerate locally)",
+  "spec": {
+    "root": "card",
+    "elements": {
+      "card": {
+        "type": "Card",
+        "props": {
+          "title": null,
+          "description": null,
+          "maxWidth": "full",
+          "centered": null
+        },
+        "children": ["tabs"]
+      },
+      "tabs": {
+        "type": "Tabs",
+        "props": {
+          "defaultValue": "theory",
+          "value": { "$bindState": "/activeTab" },
+          "tabs": [
+            { "label": "Theory", "value": "theory" },
+            { "label": "Clues", "value": "clues" },
+            { "label": "Hex", "value": "hex" }
+          ]
+        },
+        "children": ["paneTheory", "paneClues", "paneHex"]
+      },
+      "paneTheory": {
+        "type": "MarkdownView",
+        "props": {
+          "markdown": { "$bindState": "/summary" },
+          "title": null
+        },
+        "children": []
+      },
+      "paneClues": {
+        "type": "Stack",
+        "props": {
+          "direction": "vertical",
+          "gap": "sm",
+          "align": null,
+          "justify": null,
+          "wrap": null
+        },
+        "children": ["mSize", "mMime", "badgeMz", "badgeStub", "alertHot"]
+      },
+      "mSize": {
+        "type": "Metric",
+        "props": {
+          "label": "Size",
+          "value": "306062",
+          "change": null,
+          "changeType": null,
+          "prefix": null,
+          "suffix": " B"
+        },
+        "children": []
+      },
+      "mMime": {
+        "type": "Metric",
+        "props": {
+          "label": "MIME",
+          "value": "octet-stream",
+          "change": null,
+          "changeType": null,
+          "prefix": null,
+          "suffix": null
+        },
+        "children": []
+      },
+      "badgeMz": {
+        "type": "Badge",
+        "props": {
+          "text": "Magic: MZ (DOS/PE family)",
+          "variant": "default"
+        },
+        "children": []
+      },
+      "badgeStub": {
+        "type": "Badge",
+        "props": {
+          "text": "DOS stub: Win32 note present",
+          "variant": "secondary"
+        },
+        "children": []
+      },
+      "alertHot": {
+        "type": "Alert",
+        "props": {
+          "title": "Hot take",
+          "message": "A Windows program in a DOS trench coat. The real case is in the PE header, past this sample.",
+          "type": "warning"
+        },
+        "children": []
+      },
+      "paneHex": {
+        "type": "Textarea",
+        "props": {
+          "label": "Hex",
+          "name": "hex",
+          "placeholder": null,
+          "rows": 12,
+          "value": { "$bindState": "/hex" },
+          "checks": null,
+          "validateOn": null
+        },
+        "children": []
+      }
+    },
+    "state": {
+      "activeTab": "theory",
+      "summary": "## Mystery bytes, Windows edition\n\n### Working theory\n- **Magic bytes:** `4D 5A` (\"MZ\") — classic DOS/Windows executable signature.\n- **DOS stub:** \"This program must be run under Win32\" style note present in the head.\n- **Size:** ~299 KiB — typical for a small Win32 PE, not a stub-only drop.\n\nHex is the evidence locker; Clues lists the hard facts.",
+      "hex": ""
+    }
+  },
+  "contentsRedacted": true
+}

@@ -71,11 +71,17 @@ export function InventedViewer({
   const [mode, setMode] = useState<"invent" | "inspect">("invent");
   const [registry, setRegistry] = useState<typeof RegistryType | null>(null);
 
+  // Keep prompt edits local: only reset when the parent prompt changes.
+  // (Do not sync prompt off of specJson/note updates — regenerate must not
+  // clobber a user-edited invent prompt.)
   useEffect(() => {
     setPrompt(props.prompt || "");
+  }, [props.prompt]);
+
+  useEffect(() => {
     setSpecJson(props.specJson || "");
     setNote(props.note);
-  }, [props.prompt, props.specJson, props.note]);
+  }, [props.specJson, props.note]);
 
   useEffect(() => {
     let cancelled = false;
@@ -126,7 +132,8 @@ export function InventedViewer({
       };
       if (!data.spec) throw new Error("Invent returned no Spec.");
       setSpecJson(JSON.stringify(data.spec));
-      if (data.prompt) setPrompt(data.prompt);
+      // Keep the textarea as the user left it — never overwrite edits with
+      // the server echo (which used to replace custom prompts with a rebuild).
       setNote(
         data.source === "haiku"
           ? "Haiku invented this mini-app from the catalog."

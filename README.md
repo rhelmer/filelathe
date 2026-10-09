@@ -90,10 +90,10 @@ Each open file becomes a floating window (drag, resize, minimize, maximize, pop-
 
 ## Jev vs Haiku
 
-| | **Jev** (TypeSafe System One) | **Haiku** (Claude Haiku 4.5) |
+| | **Jev** (TypeSafe System One) | **Haiku** (Claude Haiku 5.5) |
 | --- | --- | --- |
 | **Role** | Judgment + composition | Generation |
-| **API** | `@typesafe-ai/sdk` → `jev-latest` (or Gateway `typesafe-ai/jev`) | `@ai-sdk/anthropic` → `claude-haiku-4-5-20251001` |
+| **API** | `@typesafe-ai/sdk` → `jev-latest` (or Gateway `typesafe-ai/jev`) | `@ai-sdk/anthropic` → `claude-haiku-5-5` |
 | **Where** | `evaluator.ts`, `route-unknown.ts`, `compose-lib.ts` | `invent-viewer.ts`, `invent-prompt.ts` |
 | **Returns** | Typed choices (and confidence), used to pick layout candidates | Free-form text parsed into a json-render Spec |
 
@@ -111,7 +111,7 @@ When routing says `invent`, the server asks Haiku for a Spec that only uses the 
 
 Output is parsed, validated against the invent catalog, and checked by a **quality gate** (rejects “poster” Specs: Card→Markdown dumps without Tabs/Textarea). Failures get **one repair pass**; if still invalid (or Haiku is down / missing key), a host **fallback** Spec is used: Tabs Text|Hex (or Hex|Notes) with real sample/hex in `state` — still interactive, not a crash.
 
-Users can edit the invent prompt in `InventedViewer` and re-run Haiku via `/api/invent-viewer`. Offline checks: `pnpm invent-smoke`.
+Users can edit the invent prompt in `InventedViewer` (**Show invent prompt**) and hit **Regenerate mini-app** — edits are sent as-is and kept in the textarea (not overwritten). Offline checks: `pnpm invent-smoke`.
 
 ### Fallbacks (quick map)
 
@@ -180,8 +180,8 @@ Only Specs with `inventedBy: "haiku"` are reused from cache (not fallbacks). Pla
 | `src/module-store.ts` | Session tracker bytes |
 | `src/toast.tsx` | Error / rate-limit / model-unavailable toasts |
 | `src/SavedSpecsPanel.tsx` | List local Haiku Specs; download or propose PR |
-| `src/contrib-scrub.ts` | Strip file samples/hex from Specs before public contrib |
-| `contrib/invented/` | Target path for community Spec contributions (contents redacted on export) |
+| `src/contrib-scrub.ts` | Strip file samples/hex/prompts from Specs (save + Propose PR) |
+| `contrib/invented/` | Community Spec contributions (structure only; samples never exported) |
 
 ## Scripts
 

@@ -278,8 +278,7 @@ const FORBIDDEN_TYPES = new Set([
  */
 export function isSpecInventPrompt(prompt: string | null | undefined): boolean {
   if (!prompt?.trim()) return false;
-  if (/window\.__HIGHLIGHT__/.test(prompt)) return false;
-  if (/TINY syntax highlighter/i.test(prompt)) return false;
+  if (isLegacyHighlighterPrompt(prompt)) return false;
   return (
     /AVAILABLE COMPONENTS/i.test(prompt) ||
     /Output ONLY JSONL patches/i.test(prompt) ||
@@ -287,12 +286,27 @@ export function isSpecInventPrompt(prompt: string | null | undefined): boolean {
   );
 }
 
+/** Old invent prompts that asked for HTML highlighters instead of Specs. */
+export function isLegacyHighlighterPrompt(
+  prompt: string | null | undefined,
+): boolean {
+  if (!prompt) return false;
+  return (
+    /window\.__HIGHLIGHT__/.test(prompt) ||
+    /TINY syntax highlighter/i.test(prompt)
+  );
+}
+
+/**
+ * Prefer the caller's prompt (user edits in InventedViewer) unless empty or
+ * a legacy highlighter prompt that cannot produce a Spec.
+ */
 export function resolveInventPrompt(
   input: InventInput,
   custom?: string | null,
 ): string {
   const trimmed = custom?.trim();
-  if (trimmed && isSpecInventPrompt(trimmed)) return trimmed;
+  if (trimmed && !isLegacyHighlighterPrompt(trimmed)) return trimmed;
   return buildInventPrompt(input);
 }
 
@@ -404,15 +418,26 @@ function acceptInventedRaw(parsed: unknown): AcceptResult {
   return { ok: true, spec: withState };
 }
 
+/** Claude Haiku 5.5 — invent Spec generation (fixed ID, no date suffix). */
+export const HAIKU_INVENT_MODEL = "claude-haiku-5-5";
+
 async function callHaiku(
   prompt: string,
   options: { signal?: AbortSignal; apiKey: string },
 ): Promise<string> {
   const anthropic = createAnthropic({ apiKey: options.apiKey });
   const result = await generateText({
-    model: anthropic("claude-haiku-4-5-20251001"),
+    model: anthropic(HAIKU_INVENT_MODEL),
     abortSignal: options.signal,
-    maxOutputTokens: 4096,
+    // Haiku 5.5 adaptive thinking counts toward max tokens; leave headroom
+    // beyond the previous 4k Spec-only budget.
+    maxOutputTokens: 8192,
+    // Invent previously ran without extended thinking; keep latency/cost low.
+    providerOptions: {
+      anthropic: {
+        effort: "low",
+      },
+    },
     prompt,
   });
   return result.text;
